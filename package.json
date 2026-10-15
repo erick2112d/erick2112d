@@ -1,0 +1,13 @@
+{
+  "name": "last-light",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Последний Светоч — HTML5-игра о защите базы для Яндекс Игр",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "e2e": "node tests/e2e.mjs",
+    "build": "node scripts/build.mjs"
+  }
+}

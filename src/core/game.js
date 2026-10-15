@@ -5,7 +5,7 @@ import {
 } from '../config.js';
 import { createRng } from './rng.js';
 import { allocateEnergy } from './energy.js';
-import { buildFlowField, nextCell } from './flowfield.js';
+import { buildFlowField, nextCell, findPath } from './flowfield.js';
 import { generateWave, SIDE_VECTORS } from './waves.js';
 
 export const SAVE_VERSION = 1;
@@ -218,6 +218,22 @@ export class Game {
     }
     if (!this.canAfford(cfg.cost)) return { ok: false, reason: 'Не хватает: ' + this.missing(cfg.cost).join(', '), noMoney: true };
     return { ok: true };
+  }
+
+  // Ближайшее к точке место, где постройку можно поставить (без учёта цены).
+  findSpot(type, x, y, minDist = 0) {
+    const size = BUILDINGS[type].size;
+    let best = null;
+    let bd = Infinity;
+    for (let ty = 0; ty < this.H; ty++) {
+      for (let tx = 0; tx < this.W; tx++) {
+        const d = Math.hypot(tx + size / 2 - x, ty + size / 2 - y);
+        if (d >= bd || d < minDist) continue;
+        const check = this.canPlace(type, tx, ty);
+        if (check.ok || check.noMoney) { bd = d; best = { tx, ty }; }
+      }
+    }
+    return best;
   }
 
   build(type, tx, ty) {
@@ -915,9 +931,73 @@ export class Game {
           this.emit('allyHit', { x: a.target.x, y: a.target.y });
         }
       }
-      this.moveToward(a, tx, ty, u.speed, stop, dt);
+      this.navigate(a, tx, ty, u.speed, stop, dt);
       if (this.phase === 'build') a.hp = Math.min(a.maxHp, a.hp + 4 * dt);
     }
+  }
+
+  // Прямая видимость между точками для тела радиуса r.
+  clearLine(x0, y0, x1, y1, r) {
+    const d = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.ceil(d / 0.3);
+    for (let k = 1; k <= steps; k++) {
+      const x = x0 + ((x1 - x0) * k) / steps;
+      const y = y0 + ((y1 - y0) * k) / steps;
+      for (const [ox, oy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) {
+        const cx = Math.floor(x + ox * 0.9);
+        const cy = Math.floor(y + oy * 0.9);
+        if (!this.inBounds(cx, cy) || this.isSolidCell(this.idx(cx, cy))) return false;
+      }
+    }
+    return true;
+  }
+
+  // Движение с обходом препятствий. false — цель недостижима.
+  navigate(u, tx, ty, speed, stop, dt) {
+    const d = Math.hypot(tx - u.x, ty - u.y);
+    if (d <= stop || this.clearLine(u.x, u.y, tx, ty, u.r)) {
+      u.path = null;
+      this.moveToward(u, tx, ty, speed, stop, dt);
+      return true;
+    }
+    const goal = this.idx(Math.floor(tx), Math.floor(ty));
+    if (!u.path || u.pathGoal !== goal || this.time - u.pathTime > 1) {
+      const start = this.idx(Math.floor(u.x), Math.floor(u.y));
+      u.path = findPath(this.W, this.H, start, goal, (i) => this.isSolidCell(i));
+      u.pathGoal = goal;
+      u.pathTime = this.time;
+    }
+    if (!u.path) {
+      this.moveToward(u, tx, ty, speed, stop, dt);
+      return false;
+    }
+    const cellX = (i) => (i % this.W) + 0.5;
+    const cellY = (i) => Math.floor(i / this.W) + 0.5;
+    while (u.path.length > 1 && (Math.hypot(cellX(u.path[0]) - u.x, cellY(u.path[0]) - u.y) < 0.35
+      || this.clearLine(u.x, u.y, cellX(u.path[1]), cellY(u.path[1]), u.r))) u.path.shift();
+    if (u.path.length <= 1) {
+      this.moveToward(u, tx, ty, speed, stop, dt);
+      return true;
+    }
+    this.moveToward(u, cellX(u.path[0]), cellY(u.path[0]), speed, 0, dt);
+    return true;
+  }
+
+  // Свободная клетка у стены здания, ближайшая к точке (x, y).
+  approachPoint(b, x, y) {
+    let best = null;
+    let bd = Infinity;
+    for (let ty = b.ty - 1; ty <= b.ty + b.size; ty++) {
+      for (let tx = b.tx - 1; tx <= b.tx + b.size; tx++) {
+        if (!this.inBounds(tx, ty) || this.isSolidCell(this.idx(tx, ty))) continue;
+        if (tx >= b.tx && tx < b.tx + b.size && ty >= b.ty && ty < b.ty + b.size) continue;
+        const corner = (tx === b.tx - 1 || tx === b.tx + b.size) && (ty === b.ty - 1 || ty === b.ty + b.size);
+        if (corner) continue;
+        const d = Math.hypot(tx + 0.5 - x, ty + 0.5 - y);
+        if (d < bd) { bd = d; best = { x: tx + 0.5, y: ty + 0.5 }; }
+      }
+    }
+    return best || this.center(b);
   }
 
   moveToward(u, tx, ty, speed, stop, dt) {
@@ -965,7 +1045,11 @@ export class Game {
         const d = Math.hypot(u.x - e.x, u.y - e.y);
         const reach = cfg.range + u.r + e.r;
         if (d <= reach) this.enemyAttack(e, cfg, { unit: u });
-        else this.moveToward(e, u.x, u.y, e.speed, reach * 0.9, dt);
+        else if (!this.navigate(e, u.x, u.y, e.speed, reach * 0.9, dt)) {
+          // недостижим (за стенами) — забываем о нём на время
+          e.target = null;
+          e.ignoreUnitsUntil = this.time + 2;
+        }
         continue;
       }
       if (e.target && e.target.building) {
@@ -983,6 +1067,7 @@ export class Game {
     // 1) союзники в досягаемости — приоритет, 2) герой, 3) постройки у дороги
     let best = null;
     let bd = cfg.aggro;
+    if (e.ignoreUnitsUntil > this.time) bd = 0;
     for (const a of this.allies) {
       if (a.dead) continue;
       const d = Math.hypot(a.x - e.x, a.y - e.y);
@@ -990,7 +1075,7 @@ export class Game {
     }
     if (best) return { unit: best };
     const h = this.hero;
-    if (!h.dead && Math.hypot(h.x - e.x, h.y - e.y) < cfg.aggro) return { unit: h };
+    if (!h.dead && bd > 0 && Math.hypot(h.x - e.x, h.y - e.y) < cfg.aggro) return { unit: h };
     // ближайшая постройка (кроме стен) в радиусе атаки
     const reach = cfg.range + e.r + 0.3;
     const r = Math.ceil(reach) + 1;
@@ -1184,14 +1269,15 @@ export class Game {
           r.task = b ? b.id : 0;
         }
         if (!b) {
-          const c = this.center(house);
-          this.moveToward(r, c.x, c.y + house.size / 2, rc.speed * mult, 0.2, dt);
-          if (Math.hypot(r.x - c.x, r.y - (c.y + house.size / 2)) < 0.4) r.gone = true;
+          const door = this.approachPoint(house, r.x, r.y);
+          this.navigate(r, door.x, door.y, rc.speed * mult, 0.2, dt);
+          if (Math.hypot(r.x - door.x, r.y - door.y) < 0.5) r.gone = true;
           continue;
         }
         const c = this.center(b);
-        if (this.distToRect(r.x, r.y, b) > 0.55) {
-          this.moveToward(r, c.x, c.y, rc.speed * mult, 0, dt);
+        if (this.distToRect(r.x, r.y, b) > 0.8) {
+          const p = this.approachPoint(b, r.x, r.y);
+          this.navigate(r, p.x, p.y, rc.speed * mult, 0.1, dt);
           continue;
         }
         r.vx = 0; r.vy = 0; r.moving = false;

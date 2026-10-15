@@ -91,3 +91,50 @@ class MinHeap {
     return top;
   }
 }
+
+// A* по сетке для союзников: путь от клетки start до клетки goal.
+// Возвращает массив индексов клеток (без стартовой) или null.
+export function findPath(w, h, start, goal, isSolid, maxNodes = 4000) {
+  if (start === goal) return [];
+  const gx = goal % w;
+  const gy = (goal - gx) / w;
+  const heur = (i) => {
+    const x = i % w;
+    const y = (i - x) / w;
+    const dx = Math.abs(x - gx);
+    const dy = Math.abs(y - gy);
+    return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+  };
+  const g = new Map([[start, 0]]);
+  const came = new Map();
+  const heap = new MinHeap();
+  heap.push(start, heur(start));
+  let expanded = 0;
+  while (heap.size && expanded++ < maxNodes) {
+    const [i] = heap.pop();
+    if (i === goal) {
+      const path = [];
+      let c = goal;
+      while (c !== start) { path.push(c); c = came.get(c); }
+      return path.reverse();
+    }
+    const x = i % w;
+    const y = (i - x) / w;
+    const gi = g.get(i);
+    for (const [dx, dy, step] of DIRS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const ni = nx + ny * w;
+      if (ni !== goal && isSolid(ni)) continue;
+      if (dx && dy && (isSolid(x + dx + y * w) || isSolid(x + (y + dy) * w))) continue;
+      const ng = gi + step;
+      if (ng < (g.get(ni) ?? Infinity)) {
+        g.set(ni, ng);
+        came.set(ni, i);
+        heap.push(ni, ng + heur(ni));
+      }
+    }
+  }
+  return null;
+}
