@@ -174,3 +174,57 @@ test('сохранение во время волны — это состоян�
   step(g, 2);
   assert.equal(g.serialize().progress.nextWave, 1);
 });
+
+test('лесопилка не трогает резерв древесины, резерв настраивается', () => {
+  const g = new Game();
+  g.res.wood = 100;
+  const saw = place(g, 'sawmill', 4, 0);
+  place(g, 'generator', -4, 0);
+  g.hero.x = 5; g.hero.y = 5;
+  const reserve = saw.reserve;
+  step(g, 200);
+  assert.ok(g.res.wood >= reserve && g.res.wood < reserve + 2, 'осталось ' + g.res.wood);
+  assert.equal(g.statusOf(saw).code, 'reserve');
+  g.changeReserve(saw.id, -1);
+  assert.equal(saw.reserve, Math.max(0, reserve - 10));
+  step(g, 30);
+  assert.ok(g.res.wood < reserve);
+});
+
+test('движение касанием: герой обходит Сердце и не залипает у стены', () => {
+  const g = new Game();
+  const c = g.heartCenter();
+  g.hero.x = c.x; g.hero.y = c.y + 2.5;
+  g.hero.moveTarget = { x: c.x, y: c.y - 3 };
+  step(g, 6);
+  assert.ok(Math.hypot(g.hero.x - c.x, g.hero.y - (c.y - 3)) < 0.6, 'дошёл за Сердце');
+  g.hero.moveTarget = { x: g.heart().tx + 3.04, y: c.y };
+  step(g, 3);
+  assert.equal(g.hero.moveTarget, null, 'цель у стены снята');
+});
+
+test('стройка на месте героя отодвигает героя', () => {
+  const g = new Game();
+  g.res.wood = 100;
+  const s = g.findSpot('generator', g.hero.x, g.hero.y);
+  g.hero.x = s.tx + 1; g.hero.y = s.ty + 1;
+  const b = g.build('generator', s.tx, s.ty);
+  assert.ok(b);
+  assert.ok(g.distToRect(g.hero.x, g.hero.y, b) >= g.hero.r - 1e-6);
+});
+
+test('ручной ремонт между волнами восстанавливает разрушенное за древесину', () => {
+  const g = new Game();
+  g.res.wood = 300;
+  const gen = place(g, 'generator', -4, 0);
+  g.damageBuilding(gen, 9999);
+  assert.equal(gen.destroyed, true);
+  const cost = g.manualRepairCost(gen).wood;
+  assert.ok(g.repairNow(gen.id));
+  assert.equal(gen.destroyed, false);
+  assert.equal(gen.hp, gen.maxHp);
+  assert.equal(g.res.wood, 300 - 30 - cost);
+  g.startWave();
+  g.damageBuilding(gen, 10);
+  assert.equal(g.repairNow(gen.id), false, 'во время волны нельзя');
+});

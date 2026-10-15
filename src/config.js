@@ -12,6 +12,7 @@ export const WORLD = {
   heroRespawnSeconds: 5,
   heroRegenPerSecond: 3,               // восстановление героя между волнами
   repairWoodPerHp: 0.1,                // 1 древесина за 10 ед. прочности
+  manualRepairMultiplier: 1.5,         // ремонт кнопкой дороже, чем ремонтниками
   heartRestoreAfterDefeat: 0.35,       // доля прочности Сердца после поражения
   autoSaveSeconds: 15,
   flowWallPenalty: 10,                 // насколько враги избегают ломать постройки
@@ -49,7 +50,7 @@ export const BUILDINGS = {
     name: 'Лесопилка', size: 2, hp: 180, cost: { wood: 25 }, maxLevel: 5,
     hpPerLevel: 0.25, upgradeCost: { gold: 15, planks: 8 },
     energyUse: 1, priority: 1,
-    recipe: { input: { wood: 2 }, output: { planks: 1 }, seconds: 3, speedPerLevel: 0.35 },
+    recipe: { input: { wood: 2 }, output: { planks: 1 }, seconds: 3, speedPerLevel: 0.35, reserve: 10, reserveStep: 10 },
     desc: 'Перерабатывает древесину в доски.',
   },
   quarry: {

@@ -112,6 +112,8 @@ export class Hud {
       case 'upgrade': g.upgrade(Number(data.id)); this.refreshCard(true); break;
       case 'toggle': g.toggleEnabled(Number(data.id)); this.refreshCard(true); break;
       case 'prio': g.changePriority(Number(data.id), Number(data.delta)); this.refreshCard(true); break;
+      case 'repairNow': g.repairNow(Number(data.id)); this.refreshCard(true); break;
+      case 'reserve': g.changeReserve(Number(data.id), Number(data.delta)); this.refreshCard(true); break;
       case 'closeCard': this.closeCard(); break;
       case 'restoreBeacon':
         if (g.restoreBeacon(data.id)) this.closeCard();
@@ -317,6 +319,11 @@ export class Hud {
         const out = Object.entries(r.output).map(([k, v]) => `${v}<img class="inl" src="${resIcon(k)}" alt="">`).join(' ');
         lines.push(`Цикл: ${inp} → ${out} за ${(r.seconds / speed).toFixed(1)} с`);
         lines.push(`<div class="progress"><div style="width:${Math.round((b.progress / r.seconds) * 100)}%"></div></div>`);
+        if (r.reserve !== undefined) {
+          const k = Object.keys(r.input)[0];
+          lines.push(`<span class="prio">Не трогать последние <b>${b.reserve}</b> <img class="inl" src="${resIcon(k)}" alt="">
+            <button data-action="reserve" data-id="${b.id}" data-delta="-1">−</button><button data-action="reserve" data-id="${b.id}" data-delta="1">+</button></span>`);
+        }
       }
       if (cfg.attack) {
         const a = cfg.attack;
@@ -329,7 +336,9 @@ export class Hud {
         lines.push(`Ремонтников: <b>${rc.workers + rc.workersPerLevel * (b.level - 1)}</b> · скорость ×${(1 + rc.perLevel * (b.level - 1)).toFixed(1)}`);
         lines.push(`Ремонт базы: ${est.hp} ед. ≈ <b>${est.wood}</b> <img class="inl" src="${resIcon('wood')}" alt="">`);
       }
-      if (b.hp < b.maxHp) lines.push(`Ремонт этой постройки: ≈ <b>${Math.ceil((b.maxHp - b.hp) * WORLD.repairWoodPerHp)}</b> <img class="inl" src="${resIcon('wood')}" alt="">`);
+      if (b.hp < b.maxHp) lines.push(`Ремонтниками: ≈ <b>${Math.ceil((b.maxHp - b.hp) * WORLD.repairWoodPerHp)}</b> <img class="inl" src="${resIcon('wood')}" alt="">`);
+      const fix = b.hp < b.maxHp && g.phase === 'build'
+        ? `<button data-action="repairNow" data-id="${b.id}" ${g.canAfford(g.manualRepairCost(b)) ? '' : 'disabled'}>Починить сейчас ${costHtml(g.manualRepairCost(b), g.res)}</button>` : '';
       const up = g.canUpgrade(b);
       const upCost = g.upgradeCost(b);
       const maxed = b.level >= cfg.maxLevel;
@@ -340,6 +349,7 @@ export class Hud {
         <p class="muted">${esc(cfg.desc)}</p>
         ${lines.map((l) => `<div class="row">${l}</div>`).join('')}
         <div class="card-actions">
+          ${fix}
           ${maxed ? '<div class="muted">Максимальный уровень</div>' : `<button class="primary" data-action="upgrade" data-id="${b.id}" ${up.ok ? '' : 'disabled'} title="${esc(up.reason || '')}">Улучшить ${costHtml(upCost, g.res)}</button>`}
           ${cfg.energyUse || cfg.recipe || cfg.repair ? `<button data-action="toggle" data-id="${b.id}">${b.enabled ? 'Выключить' : 'Включить'}</button>` : ''}
           ${cfg.energyUse ? `<span class="prio">Приоритет <button data-action="prio" data-id="${b.id}" data-delta="-1">−</button><button data-action="prio" data-id="${b.id}" data-delta="1">+</button></span>` : ''}

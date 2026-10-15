@@ -11,7 +11,6 @@ export class Input {
     this.joy = null;         // { id, x0, y0, x, y }
     this.mouse = null;       // экранные координаты
     this.pointerDown = null;
-    this.moveTarget = null;
     this.stick = document.getElementById('stick');
     this.joyEl = document.getElementById('joystick');
 
@@ -76,7 +75,7 @@ export class Input {
       this.joyEl.style.top = `${p.y}px`;
       this.joyEl.classList.remove('hidden');
       this.stick.style.transform = 'translate(-50%, -50%)';
-      this.moveTarget = null;
+      this.getGame().hero.moveTarget = null;
       return;
     }
     this.mouse = p;
@@ -140,21 +139,25 @@ export class Input {
     }
     const tx = Math.floor(w.x);
     const ty = Math.floor(w.y);
-    // постройка (включая высокие — по клику чуть выше основания)
-    const b = g.buildingAt(tx, ty) || g.buildingAt(tx, ty + 1);
+    // постройка; дерево/камень; высокая постройка — по клику чуть выше основания
+    const node = g.nodeAt(tx, ty);
+    const b = g.buildingAt(tx, ty) || (!node && g.buildingAt(tx, ty + 1));
     if (b) { this.hud.selectBuilding(b.id); return; }
     const bc = g.beacons.find((x) => x.state !== 'lit' && w.x >= x.cfg.tx - 0.3 && w.x <= x.cfg.tx + 2.3 && w.y >= x.cfg.ty - 2.5 && w.y <= x.cfg.ty + 2.2);
     if (bc && (bc.state === 'ready' || g.inTerritory(w.x, w.y + 3))) { this.hud.selectBeacon(bc.id); return; }
-    if (this.hud.card) { this.hud.closeCard(); return; }
+    if (this.hud.card) this.hud.closeCard();
     // в авто-режиме касание земли ведёт героя к точке
-    if (g.settings.auto) this.moveTarget = { x: w.x, y: w.y };
+    if (g.settings.auto) {
+      g.hero.moveTarget = { x: w.x, y: w.y };
+      this.renderer.fx.ring(w.x, w.y, 0.8, 'rgba(255,224,138,0.9)', { life: 0.35 });
+    }
   }
 
   hitSomething(w) {
     const g = this.getGame();
     const tx = Math.floor(w.x);
     const ty = Math.floor(w.y);
-    return !!(g.buildingAt(tx, ty) || g.buildingAt(tx, ty + 1));
+    return !!(g.buildingAt(tx, ty) || (!g.nodeAt(tx, ty) && g.buildingAt(tx, ty + 1)));
   }
 
   updateGhost(p) {
@@ -183,15 +186,6 @@ export class Input {
       const d = Math.hypot(dx, dy);
       if (d > 8) { x = dx / Math.max(d, 46); y = dy / Math.max(d, 46); }
     }
-    if (x || y) { this.moveTarget = null; return { x, y }; }
-    const g = this.getGame();
-    if (this.moveTarget) {
-      const dx = this.moveTarget.x - g.hero.x;
-      const dy = this.moveTarget.y - g.hero.y;
-      const d = Math.hypot(dx, dy);
-      if (d < 0.25) { this.moveTarget = null; return { x: 0, y: 0 }; }
-      return { x: dx / d, y: dy / d };
-    }
-    return { x: 0, y: 0 };
+    return { x, y };
   }
 }

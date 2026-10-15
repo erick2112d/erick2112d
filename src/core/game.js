@@ -97,7 +97,7 @@ export class Game {
     return {
       id: 0, x: 0, y: 0, vx: 0, vy: 0, r: UNITS.hero.radius, hp: UNITS.hero.hp, maxHp: UNITS.hero.hp,
       weapon: 'sword', cd: 0, facing: 1, aimX: 1, aimY: 0, dead: false, respawn: 0,
-      input: { x: 0, y: 0 }, attackAt: null, attackHeld: false,
+      input: { x: 0, y: 0 }, moveTarget: null, attackAt: null, attackHeld: false,
       attackTime: -9, hitTime: -9, moving: false, kind: 'hero',
     };
   }
@@ -187,6 +187,7 @@ export class Game {
       maxHp: cfg.hp, hp: cfg.hp, destroyed: false, enabled: true,
       priority: cfg.priority ?? 1, powered: !cfg.energyUse, status: 'working',
       progress: 0, cd: 0, spawnTimer: 1, builtTime: this.time, hitTime: -9, workTime: -9,
+      reserve: cfg.recipe?.reserve ?? 0,
     };
     this.buildings.push(b);
     for (let y = ty; y < ty + cfg.size; y++) {
@@ -211,10 +212,6 @@ export class Game {
         if (this.grid[this.idx(x, y)]) return { ok: false, reason: 'Место занято' };
         if (this.nodeGrid[this.idx(x, y)]) return { ok: false, reason: 'Мешает дерево или камень' };
       }
-    }
-    const h = this.hero;
-    if (!h.dead && h.x > tx - h.r && h.x < tx + cfg.size + h.r && h.y > ty - h.r && h.y < ty + cfg.size + h.r) {
-      return { ok: false, reason: 'Здесь стоит герой' };
     }
     if (!this.canAfford(cfg.cost)) return { ok: false, reason: 'Не хватает: ' + this.missing(cfg.cost).join(', '), noMoney: true };
     return { ok: true };
@@ -244,6 +241,13 @@ export class Game {
     }
     this.pay(BUILDINGS[type].cost);
     const b = this.addBuilding(type, tx, ty);
+    // всех, кто стоит на месте стройки, отодвигаем к ближайшей свободной клетке
+    for (const u of [this.hero, ...this.allies, ...this.repairers]) {
+      if (u.dead || this.distToRect(u.x, u.y, b) > u.r) continue;
+      const p = this.approachPoint(b, u.x, u.y);
+      u.x = p.x; u.y = p.y;
+      u.moveTarget = null;
+    }
     this.recomputeEnergy();
     this.emit('save');
     return b;
@@ -288,6 +292,14 @@ export class Game {
   maxHpFor(type, level) {
     const cfg = BUILDINGS[type];
     return Math.round(cfg.hp * (1 + (cfg.hpPerLevel || 0) * (level - 1)));
+  }
+
+  changeReserve(id, delta) {
+    const b = this.byId(id);
+    const r = b && BUILDINGS[b.type].recipe;
+    if (!r) return;
+    b.reserve = Math.max(0, Math.min(WORLD.storageCap, b.reserve + delta * (r.reserveStep || 10)));
+    this.emit('save');
   }
 
   toggleEnabled(id) {
@@ -340,6 +352,10 @@ export class Game {
       if (!this.canAfford(r.input)) {
         return { code: 'no_input', text: 'Нет сырья: нужно ' + Object.entries(r.input).map(([k, v]) => `${v} ${RESOURCES[k].name.toLowerCase()}`).join(', '), bad: true };
       }
+      const low = Object.entries(r.input).find(([k, v]) => this.res[k] - v < b.reserve);
+      if (low) {
+        return { code: 'reserve', text: `Ждёт: ${RESOURCES[low[0]].name.toLowerCase()} не ниже резерва ${b.reserve} — запас для стройки` };
+      }
       const full = Object.keys(r.output).some((k) => CAPPED.includes(k) && this.res[k] >= WORLD.storageCap);
       if (full) return { code: 'full', text: 'Склад полон', bad: true };
       return { code: 'working', text: 'Работает' };
@@ -370,6 +386,36 @@ export class Game {
       if (b.type === 'heart' || b.hp < b.maxHp) missingHp += b.maxHp - b.hp;
     }
     return { hp: Math.round(missingHp), wood: Math.ceil(missingHp * WORLD.repairWoodPerHp) };
+  }
+
+  manualRepairCost(b) {
+    return { wood: Math.ceil((b.maxHp - b.hp) * WORLD.repairWoodPerHp * WORLD.manualRepairMultiplier) };
+  }
+
+  // Мгновенный ремонт за древесину между волнами — на случай, если ремонтников нет.
+  repairNow(id) {
+    const b = this.byId(id);
+    if (!b || b.hp >= b.maxHp) return false;
+    if (this.phase !== 'build') {
+      this.emit('toast', { text: 'Чинить вручную можно только между волнами', bad: true });
+      return false;
+    }
+    const cost = this.manualRepairCost(b);
+    if (!this.canAfford(cost)) {
+      this.emit('toast', { text: 'Не хватает: ' + this.missing(cost).join(', '), bad: true });
+      return false;
+    }
+    this.pay(cost);
+    b.hp = b.maxHp;
+    if (b.destroyed) {
+      b.destroyed = false;
+      this.flowDirty = true;
+      this.recomputeEnergy();
+    }
+    const c = this.center(b);
+    this.emit('repaired', { x: c.x, y: c.y, id: b.id });
+    this.emit('save');
+    return true;
   }
 
   // ---------- маяки ----------
@@ -675,15 +721,36 @@ export class Game {
       return;
     }
     const len = Math.hypot(h.input.x, h.input.y);
-    const ix = len > 1 ? h.input.x / len : h.input.x;
-    const iy = len > 1 ? h.input.y / len : h.input.y;
-    h.vx = ix * UNITS.hero.speed;
-    h.vy = iy * UNITS.hero.speed;
-    h.x += h.vx * dt;
-    h.y += h.vy * dt;
-    h.moving = len > 0.1;
-    if (Math.abs(ix) > 0.1) h.facing = ix > 0 ? 1 : -1;
-    this.resolveSolids(h);
+    if (len > 0.1) h.moveTarget = null;
+    if (h.moveTarget) {
+      // движение касанием: идём в точку, обходя препятствия
+      const t = h.moveTarget;
+      const cell = this.idx(Math.floor(t.x), Math.floor(t.y));
+      // к дереву или постройке подходим вплотную и останавливаемся
+      const stop = this.inBounds(Math.floor(t.x), Math.floor(t.y)) && this.isSolidCell(cell) ? 0.5 + h.r + 0.15 : 0.15;
+      this.navigate(h, t.x, t.y, UNITS.hero.speed, stop, dt);
+      // застрял (упёрся в препятствие у самой точки) — тоже прибыли
+      t.check = (t.check ?? 0) + dt;
+      if (t.check >= 0.4) {
+        t.stuck = t.from && Math.hypot(h.x - t.from.x, h.y - t.from.y) < 0.1;
+        t.from = { x: h.x, y: h.y };
+        t.check = 0;
+      }
+      if (Math.hypot(t.x - h.x, t.y - h.y) <= stop + 0.1 || !h.moving || t.stuck) {
+        h.moveTarget = null;
+        h.vx = 0; h.vy = 0; h.moving = false;
+      }
+    } else {
+      const ix = len > 1 ? h.input.x / len : h.input.x;
+      const iy = len > 1 ? h.input.y / len : h.input.y;
+      h.vx = ix * UNITS.hero.speed;
+      h.vy = iy * UNITS.hero.speed;
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.moving = len > 0.1;
+      if (Math.abs(ix) > 0.1) h.facing = ix > 0 ? 1 : -1;
+      this.resolveSolids(h);
+    }
     if (this.phase === 'build') h.hp = Math.min(h.maxHp, h.hp + WORLD.heroRegenPerSecond * dt);
 
     h.cd -= dt;
@@ -1400,6 +1467,11 @@ export class Game {
     if (!has('generator')) return { text: 'Построй Генератор — он даёт энергию', build: 'generator' };
     if (!has('sawmill')) return { text: 'Построй Лесопилку — она делает доски из древесины', build: 'sawmill' };
     if (this.energy.deficit > 0) return { text: `Не хватает энергии (${this.energy.deficit}) — улучши или построй генератор`, build: 'generator' };
+    const saw = this.buildings.find((b) => b.type === 'sawmill');
+    if (!tower && saw && this.res.planks < BUILDINGS.archerTower.cost.planks && ['reserve', 'no_input'].includes(this.statusOf(saw).code)) {
+      const n = this.nearestNode(this.hero.x, this.hero.y, 99);
+      return { text: `Наруби ещё древесины: лесопилка не трогает последние ${saw.reserve} — это запас на стройку`, target: n ? { x: n.x, y: n.y } : null };
+    }
     if (!tower) return { text: 'Накопи доски и поставь Башню лучников у Сердца', build: 'archerTower' };
     if (this.progress.highestCleared === 0) return { text: 'Готово! Нажми «Начать волну» — враги придут с отмеченной стороны', wave: true };
     if (!has('barracks')) return { text: 'Построй Казарму мечников — они встретят врагов', build: 'barracks' };
@@ -1423,7 +1495,7 @@ export class Game {
       progress: { ...this.progress },
       buildings: this.buildings.map((b) => ({
         type: b.type, tx: b.tx, ty: b.ty, level: b.level, hp: Math.round(b.hp), destroyed: b.destroyed,
-        enabled: b.enabled, priority: b.priority,
+        enabled: b.enabled, priority: b.priority, reserve: b.reserve,
       })),
       nodes: this.nodes.map((n) => ({ kind: n.kind, tx: n.tx, ty: n.ty, hp: n.hp, regrow: Math.round(n.regrow) })),
       beacons: this.beacons.map((b) => ({ id: b.id, state: b.state })),
@@ -1447,6 +1519,7 @@ export class Game {
       b.destroyed = !!sb.destroyed;
       b.enabled = sb.enabled !== false;
       b.priority = sb.priority ?? b.priority;
+      b.reserve = sb.reserve ?? b.reserve;
     }
     for (const sb of s.beacons || []) {
       const bc = this.beacons.find((b) => b.id === sb.id);

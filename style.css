@@ -119,14 +119,14 @@ button.big { font-size: 16px; padding: 10px 18px; }
   flex: 0 0 auto; width: 86px; padding: 4px 4px 5px; display: flex; flex-direction: column; align-items: center; gap: 1px;
   background: var(--panel); border-radius: 12px; position: relative;
 }
-.build-card img { width: 52px; height: 52px; }
+.build-card > img { width: 52px; height: 52px; }
 .build-card .bname { font-size: 11px; line-height: 13px; text-align: center; min-height: 26px; display: flex; align-items: center; }
 .build-card .bcost { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; font-size: 11px; }
 .build-card.on { background: linear-gradient(#5a4a1a, #3a2f12); outline: 3px solid var(--gold); }
-.build-card.poor img { filter: grayscale(0.7) brightness(0.8); }
+.build-card.poor > img { filter: grayscale(0.7) brightness(0.8); }
 .build-card.locked { opacity: 0.55; }
 .build-card.hint { animation: hint 1s infinite; }
-@keyframes hint { 50% { box-shadow: 0 0 0 4px rgba(255,224,138,0.8), 0 2px 0 rgba(0,0,0,0.4); transform: translateY(-3px); } }
+@keyframes hint { 50% { box-shadow: 0 0 0 4px rgba(255,224,138,0.85), 0 0 18px rgba(255,224,138,0.6); filter: brightness(1.25); } }
 .build-card.cancel { justify-content: center; background: #4a2030; }
 .build-card.cancel .x { font-size: 30px; line-height: 52px; }
 .cost { display: inline-flex; align-items: center; gap: 1px; font-weight: 800; }
@@ -194,7 +194,7 @@ button.big { font-size: 16px; padding: 10px 18px; }
 .journal-entry p { margin: 0; font-size: 14px; }
 .help { text-align: left; font-size: 14px; display: grid; gap: 6px; }
 
-.toasts { position: absolute; top: 40%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.toasts { position: absolute; top: 24%; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .toast {
   background: rgba(20,16,34,0.92); border: 2px solid var(--ink); border-radius: 999px; padding: 7px 16px;
   font-weight: 700; font-size: 14px; animation: pop 0.25s; transition: opacity 0.4s, transform 0.4s; text-align: center;
@@ -224,18 +224,29 @@ button.big { font-size: 16px; padding: 10px 18px; }
   .res img { width: 18px; height: 18px; }
   .top-buttons { margin-left: auto; }
   .icon-btn { width: 34px; height: 34px; font-size: 15px; }
-  .wave-panel { top: auto; right: auto; left: 50%; transform: translateX(-50%); width: min(440px, calc(100% - 16px)); bottom: 168px; padding: 5px 8px 7px; }
+  .wave-panel {
+    top: calc(84px + env(safe-area-inset-top)); right: auto; left: 50%; transform: translateX(-50%); width: min(440px, calc(100% - 16px));
+    padding: 4px 8px 6px; display: grid; grid-template-columns: 1fr auto; column-gap: 8px; align-items: center; text-align: left;
+  }
+  .wave-panel > * { grid-column: 1; }
+  .wave-panel .big { grid-column: 2; grid-row: 1 / span 3; font-size: 13px; padding: 8px 10px; max-width: 120px; }
+  .wave-comp { justify-content: flex-start; }
+  .wave-choice { justify-content: flex-start; margin-bottom: 0; }
   .wave-title { font-size: 14px; }
   .wave-sub { font-size: 11px; }
   .wave-comp { margin: 2px 0 4px; }
   .enemy-chip img { width: 20px; height: 20px; }
   .wave-panel .big { font-size: 14px; padding: 7px 14px; }
-  .objective { top: 96px; bottom: auto; font-size: 12px; }
+  .objective { bottom: calc(160px + env(safe-area-inset-bottom)); font-size: 12px; border-radius: 12px; }
   .hud-bottom { flex-direction: column-reverse; align-items: stretch; gap: 2px; }
   .weapons { justify-content: flex-end; }
   .weapon { width: 46px; height: 46px; }
   .weapon img { width: 36px; height: 36px; }
   .build-card { width: 74px; }
-  .build-card img { width: 42px; height: 42px; }
-  .card { left: 8px; right: 8px; width: auto; top: auto; bottom: 168px; max-height: 45%; }
+  .build-card > img { width: 40px; height: 40px; }
+  .build-card .bname { font-size: 10px; line-height: 11px; min-height: 22px; }
+  .build-card .bcost { font-size: 10px; }
+  .toasts { top: calc(200px + env(safe-area-inset-top)); width: calc(100% - 24px); }
+  .toast { font-size: 12px; padding: 5px 12px; }
+  .card { left: 8px; right: 8px; width: auto; top: auto; bottom: calc(158px + env(safe-area-inset-bottom)); max-height: 45%; z-index: 2; }
 }
