@@ -283,7 +283,7 @@ export class Hud {
     this.renderBars();
     this.renderCurrencies();
     this.renderWavePanel();
-    this.setText('#objective', this.objective ? `<span class="star">★</span> ${esc(this.objective.text)}` : '');
+    this.setText('#objective', this.objective && !this.card && !this.buildType ? `<span class="star">★</span> ${esc(this.objective.text)}` : '');
     if (!this.pressing) {
       this.refreshCard();
       this.winTimer = (this.winTimer || 0) - 0.12;

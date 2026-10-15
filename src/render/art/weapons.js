@@ -1,23 +1,14 @@
 // Оружие и инструменты. Рукоять в начале координат, клинок вверх (−y). Цвет и сияние зависят от тира.
-import { OUTLINE, ink, ellipse, poly } from './common.js';
+import { OUTLINE, ink, ellipse, poly, glow as glowSoft } from './common.js';
 
 export const METAL = [null, '#a87a4a', '#b9c0cc', '#d6dce6', '#eef4ff', '#8ff5e6', '#ffb0f0', '#ffe9a0'];
 export const METAL_SHADE = [null, '#7a5530', '#8a92a2', '#a2aab8', '#b8c4dc', '#4fc8b8', '#d070c8', '#e0b040'];
 export const GEM = [null, '#7a4524', '#c94a3a', '#3fd66a', '#3f8fff', '#b05aff', '#ff7a3c', '#fff6c0'];
 export const GLOW = [null, null, null, null, 'rgba(160,200,255,0.35)', 'rgba(110,255,230,0.45)', 'rgba(255,120,240,0.5)', 'rgba(255,220,120,0.6)'];
 
+const GLOW_RGB = [null, null, null, null, '160,200,255', '110,255,230', '255,120,240', '255,220,120'];
 function glow(ctx, x, y, r, tier) {
-  if (!GLOW[tier]) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, GLOW[tier]);
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  if (GLOW_RGB[tier]) glowSoft(ctx, x, y, r, GLOW_RGB[tier], 0.55);
 }
 
 function gem(ctx, x, y, r, tier) {
@@ -337,15 +328,7 @@ export function staff(ctx, kind = 'fireStaff', tier = 2, glowK = 0, t = 0, s = 1
   ctx.strokeStyle = tier >= 4 ? METAL[tier] : '#f2c14e';
   ctx.stroke();
   const r = 0.08 + tier * 0.005 + glowK * 0.03 + Math.sin(t * 6) * 0.006;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createRadialGradient(0, -0.54, 0, 0, -0.54, r * 2.6);
-  g.addColorStop(0, `rgba(${halo},${0.55 + glowK * 0.3})`);
-  g.addColorStop(1, `rgba(${halo},0)`);
-  ctx.fillStyle = g;
-  ellipse(ctx, 0, -0.54, r * 2.6, r * 2.6);
-  ctx.fill();
-  ctx.restore();
+  glowSoft(ctx, 0, -0.54, r * 2.6, halo, 0.55 + glowK * 0.3);
   if (kind === 'frostStaff') {
     poly(ctx, [[0, -0.54 - r * 1.3], [r * 0.8, -0.54], [0, -0.54 + r * 1.1], [-r * 0.8, -0.54]]);
     ink(ctx, color, 0.025);

@@ -47,7 +47,7 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = this.lowQ ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     this.dpr = dpr;
@@ -272,6 +272,12 @@ export class Renderer {
 
   frame(dt, ui) {
     this.time += dt;
+    // если кадры долго медленные — снижаем плотность пикселей (слабые телефоны)
+    this.ft = (this.ft ?? 0.016) * 0.97 + dt * 0.03;
+    if (!this.lowQ && this.time > 5 && this.ft > 0.034 && (window.devicePixelRatio || 1) > 1) {
+      this.lowQ = true;
+      this.resize();
+    }
     const g = this.game;
     this.fx.update(dt);
     if (this.lightWave) { this.lightWave.t += dt; if (this.lightWave.t > 1.6) this.lightWave = null; }

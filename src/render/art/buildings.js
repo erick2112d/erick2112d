@@ -3,7 +3,7 @@
 // info: { size, level, path ('a'|'b'|null), tier (число эволюций), working, powered, hpRatio }
 import {
   OUTLINE, ink, ellipse, poly, rrect, shade, hash, stoneCourses, planksFill, tiledRoof, window_, door,
-  foundation, banner, torch, smoke,
+  foundation, banner, torch, smoke, glow,
 } from './common.js';
 import { sword, axe, pickaxe, hammer, bow, shield, staff } from './weapons.js';
 
@@ -169,17 +169,7 @@ function gearShape(ctx, x, y, r, teeth = 10, color = '#c9ced8', rot = 0) {
   ctx.restore();
 }
 
-function glowSpot(ctx, x, y, r, rgb, a = 0.5) {
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, `rgba(${rgb},${a})`);
-  g.addColorStop(1, `rgba(${rgb},0)`);
-  ctx.fillStyle = g;
-  ellipse(ctx, x, y, r, r);
-  ctx.fill();
-  ctx.restore();
-}
+function glowSpot(ctx, x, y, r, rgb, a = 0.5) { glow(ctx, x, y, r, rgb, a); }
 
 // ---------- постройки ----------
 

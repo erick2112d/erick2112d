@@ -222,11 +222,7 @@ export function torch(ctx, x, y, t, s = 1) {
   ctx.rect(-0.03, 0, 0.06, 0.22);
   ink(ctx, '#5a3218', 0.02);
   const f = Math.sin(t * 13 + x * 5) * 0.03;
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = 'rgba(255,170,60,0.25)';
-  ellipse(ctx, 0, -0.06, 0.22, 0.22);
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
+  glow(ctx, 0, -0.06, 0.3, '255,170,60', 0.35);
   ctx.beginPath();
   ctx.moveTo(-0.07, 0.02);
   ctx.quadraticCurveTo(-0.08, -0.12, f, -0.22);
@@ -249,6 +245,30 @@ export function smoke(ctx, x, y, t, n = 3, color = 'rgba(120,115,130,') {
     ellipse(ctx, x + Math.sin(t * 1.3 + i * 2) * 0.12 * ph, y - ph * 1.1, 0.08 + ph * 0.2, 0.08 + ph * 0.2);
     ctx.fill();
   }
+}
+
+// Мягкое свечение: градиент рисуется один раз на цвет и потом только копируется.
+const glowCache = new Map();
+export function glow(ctx, x, y, r, rgb, a = 0.5) {
+  if (r <= 0 || a <= 0) return;
+  let c = glowCache.get(rgb);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${rgb},1)`);
+    gr.addColorStop(0.45, `rgba(${rgb},0.45)`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    glowCache.set(rgb, c);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha *= Math.min(1, a);
+  ctx.drawImage(c, x - r, y - r, r * 2, r * 2);
+  ctx.restore();
 }
 
 // ---------- кэш спрайтов ----------

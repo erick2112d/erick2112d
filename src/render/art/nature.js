@@ -1,5 +1,5 @@
 // Природа и активности на карте. Начало координат — точка на земле.
-import { OUTLINE, ink, ellipse, poly, shade, hash, planksFill } from './common.js';
+import { OUTLINE, ink, ellipse, poly, shade, hash, planksFill, glow } from './common.js';
 
 const TREE_STYLES = [
   null,
@@ -247,30 +247,14 @@ export function shrine(ctx, ready, t = 0) {
   ctx.stroke();
   if (ready) {
     const y = -1.35 + Math.sin(t * 2) * 0.06;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const g = ctx.createRadialGradient(0, y, 0, 0, y, 0.6);
-    g.addColorStop(0, 'rgba(127,243,255,0.8)');
-    g.addColorStop(1, 'rgba(127,243,255,0)');
-    ctx.fillStyle = g;
-    ellipse(ctx, 0, y, 0.6, 0.6);
-    ctx.fill();
-    ctx.restore();
+    glow(ctx, 0, y, 0.7, '127,243,255', 0.8);
     poly(ctx, [[0, y - 0.18], [0.12, y], [0, y + 0.18], [-0.12, y]]);
     ink(ctx, '#bffaff', 0.025);
   }
 }
 
 export function rift(ctx, t = 0, hpRatio = 1) {
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createRadialGradient(0, -0.5, 0, 0, -0.5, 1.2);
-  g.addColorStop(0, 'rgba(180,80,255,0.6)');
-  g.addColorStop(1, 'rgba(80,20,140,0)');
-  ctx.fillStyle = g;
-  ellipse(ctx, 0, -0.5, 1.2, 1.2);
-  ctx.fill();
-  ctx.restore();
+  glow(ctx, 0, -0.5, 1.3, '180,80,255', 0.6);
   ctx.save();
   ctx.translate(0, -0.55);
   ctx.scale(0.55 + hpRatio * 0.2, 1);
