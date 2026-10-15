@@ -1,5 +1,5 @@
 // Волны, сюжет, достижения, подсказки.
-import { STORY, ACHIEVEMENTS, NOTES, BUILDINGS, WORLD, MERCHANT } from '../data/index.js';
+import { STORY, ACHIEVEMENTS, NOTES, BUILDINGS, WORLD, MERCHANT, ENEMIES } from '../data/index.js';
 import { generateWave } from './waves.js';
 
 export function storyEntry(id) {
@@ -126,6 +126,11 @@ export const progressMixin = {
   // ---------- подсказка-цель ----------
 
   objective() {
+    if (this.phase === 'wave') {
+      const boss = this.enemies.find((e) => !e.dead && ENEMIES[e.type]?.boss);
+      if (boss) return { text: `${ENEMIES[boss.type].name} у стен! Сосредоточь удары на боссе`, target: { x: boss.x, y: boss.y } };
+      return { text: this.hero.dead ? 'Хранитель скоро вернётся — башни держат оборону' : 'Отрази волну: защищай Сердце и помогай башням' };
+    }
     const has = (t) => this.buildings.some((b) => b.type === t);
     const nearestTree = () => {
       const n = this.nearestNode(this.hero.x, this.hero.y, 30);

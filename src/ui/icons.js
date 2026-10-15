@@ -1,6 +1,6 @@
 // Иконки интерфейса. Нарисованы теми же функциями, что и игра, и закэшированы как картинки.
 import { OUTLINE, ink, ellipse, poly } from '../render/art/common.js';
-import { PALETTES, LOOKS, drawHead } from '../render/art/characters.js';
+import { PALETTES, LOOKS, drawHead, drawBody } from '../render/art/characters.js';
 import { ART, wallArt } from '../render/art/buildings.js';
 import { drawItem, GEM, METAL } from '../render/art/weapons.js';
 import { BUILDINGS, ITEMS, ENEMIES } from '../data/index.js';
@@ -81,10 +81,10 @@ const RES_DRAW = {
   },
 };
 
-export function resIcon(res) {
-  return render('res-' + res, 26, 26, (ctx) => {
-    ctx.translate(13, 13);
-    ctx.scale(22, 22);
+export function resIcon(res, size = 26) {
+  return render(`res-${res}-${size}`, size, size, (ctx) => {
+    ctx.translate(size / 2, size / 2);
+    ctx.scale(size * 0.85, size * 0.85);
     (RES_DRAW[res] || RES_DRAW.stone)(ctx);
   });
 }
@@ -161,6 +161,35 @@ export function portrait(lookId) {
 
 export function enemyPortrait(type) { return portrait(ENEMIES[type].look); }
 
+// Хранитель во весь рост для окна снаряжения: доспех, амулет и оружие в руках… то есть рядом.
+export function heroFigure(armorId, amuletId, weaponId) {
+  return render(`fig-${armorId}-${amuletId}-${weaponId}`, 150, 170, (ctx) => {
+    const look = LOOKS.hero;
+    const p = PALETTES.hero;
+    ctx.translate(70, 150);
+    ctx.scale(118, 118);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ellipse(ctx, 0, 0, 0.36, 0.1);
+    ctx.fill();
+    drawBody(ctx, look, p, 0, ITEMS[armorId]?.tier || 0);
+    if (amuletId) { ellipse(ctx, 0, -0.4, 0.035, 0.045); ink(ctx, GEM[ITEMS[amuletId].tier], 0.015); }
+    ctx.save();
+    ctx.translate(0, -0.86);
+    drawHead(ctx, look, p, 0, {});
+    ctx.restore();
+    const w = ITEMS[weaponId];
+    if (w) {
+      ctx.save();
+      ctx.translate(0.5, -0.55);
+      if (w.wtype === 'bow' || w.wtype === 'crossbow') { ctx.rotate(-0.2); drawItem(ctx, w, { s: 0.85 }); } else {
+        ctx.rotate(0.25);
+        drawItem(ctx, w, { s: w.wtype === 'halberd' || w.wtype === 'scythe' ? 0.62 : 0.8, glow: 0.5 });
+      }
+      ctx.restore();
+    }
+  });
+}
+
 const UI_DRAW = {
   bag(ctx) {
     ctx.beginPath(); ctx.moveTo(-0.32, -0.1); ctx.quadraticCurveTo(-0.4, 0.38, 0, 0.38); ctx.quadraticCurveTo(0.4, 0.38, 0.32, -0.1); ctx.closePath();
@@ -199,20 +228,129 @@ const UI_DRAW = {
     ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 0.08; ctx.beginPath(); ctx.moveTo(0.18, -0.15); ctx.lineTo(0.38, 0.15); ctx.moveTo(0.38, -0.15); ctx.lineTo(0.18, 0.15); ctx.stroke();
   },
   shop(ctx) { RES_DRAW.gems(ctx); },
+  hp(ctx) {
+    ctx.beginPath(); ctx.moveTo(0, 0.36); ctx.bezierCurveTo(-0.5, 0, -0.32, -0.42, 0, -0.18); ctx.bezierCurveTo(0.32, -0.42, 0.5, 0, 0, 0.36);
+    ink(ctx, '#ff5a6a', 0.07); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ellipse(ctx, -0.16, -0.12, 0.07, 0.05, -0.5); ctx.fill();
+  },
+  armor(ctx) {
+    ctx.beginPath(); ctx.moveTo(0, -0.4); ctx.lineTo(0.32, -0.28); ctx.quadraticCurveTo(0.3, 0.2, 0, 0.4); ctx.quadraticCurveTo(-0.3, 0.2, -0.32, -0.28); ctx.closePath();
+    ink(ctx, '#9aa5b8', 0.07); ctx.beginPath(); ctx.moveTo(0, -0.32); ctx.lineTo(0, 0.3); ctx.strokeStyle = '#5a6478'; ctx.lineWidth = 0.05; ctx.stroke();
+  },
+  damage(ctx) { UI_DRAW.swords(ctx); },
+  haste(ctx) {
+    poly(ctx, [[-0.26, -0.38], [0.26, -0.38], [0.04, 0], [0.26, 0.38], [-0.26, 0.38], [-0.04, 0]]); ink(ctx, '#f6ead6', 0.06);
+    poly(ctx, [[-0.12, 0.3], [0.12, 0.3], [0, 0.12]]); ctx.fillStyle = '#f2c14e'; ctx.fill();
+    ctx.beginPath(); ctx.rect(-0.32, -0.44, 0.64, 0.08); ink(ctx, '#8a5a32', 0.04); ctx.beginPath(); ctx.rect(-0.32, 0.36, 0.64, 0.08); ink(ctx, '#8a5a32', 0.04);
+  },
+  crit(ctx) {
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; const r = i % 2 ? 0.16 : 0.42; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.closePath(); ink(ctx, '#ff9a3c', 0.06); ellipse(ctx, 0, 0, 0.1, 0.1); ctx.fillStyle = '#fff3c0'; ctx.fill();
+  },
+  speed(ctx) {
+    ctx.beginPath(); ctx.moveTo(-0.22, -0.38); ctx.lineTo(0.06, -0.38); ctx.lineTo(0.06, 0.08); ctx.lineTo(0.36, 0.16); ctx.lineTo(0.36, 0.36); ctx.lineTo(-0.22, 0.36); ctx.closePath();
+    ink(ctx, '#a0683a', 0.07); ctx.fillStyle = '#6b3d1f'; ctx.fillRect(-0.22, 0.24, 0.58, 0.1);
+    ctx.strokeStyle = '#f6ead6'; ctx.lineWidth = 0.05; ctx.beginPath(); for (const y of [-0.2, -0.04]) { ctx.moveTo(-0.46, y); ctx.lineTo(-0.3, y); } ctx.stroke();
+  },
+  regen(ctx) {
+    ctx.beginPath(); ctx.rect(-0.12, -0.36, 0.24, 0.72); ctx.rect(-0.36, -0.12, 0.72, 0.24); ink(ctx, '#6ee36e', 0.07);
+    ctx.fillStyle = '#6ee36e'; ctx.fillRect(-0.1, -0.1, 0.2, 0.2);
+  },
+  goldFind(ctx) { RES_DRAW.gold(ctx); },
+  lock(ctx) {
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.16; ctx.beginPath(); ctx.arc(0, -0.1, 0.2, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = '#c9ced8'; ctx.lineWidth = 0.07; ctx.stroke();
+    ctx.beginPath(); ctx.rect(-0.3, -0.1, 0.6, 0.46); ink(ctx, '#f2c14e', 0.07);
+    ellipse(ctx, 0, 0.08, 0.06, 0.06); ctx.fillStyle = OUTLINE; ctx.fill(); ctx.fillRect(-0.025, 0.1, 0.05, 0.14);
+  },
+  demolish(ctx) {
+    for (const [x, y, r] of [[-0.2, 0.26, 0.14], [0.12, 0.28, 0.16], [-0.02, 0.12, 0.13]]) { ellipse(ctx, x, y, r, r * 0.7); ink(ctx, '#a9b0bd', 0.05); }
+    ctx.save(); ctx.translate(0.05, -0.08); ctx.rotate(-0.6);
+    ctx.beginPath(); ctx.rect(-0.04, -0.1, 0.08, 0.5); ink(ctx, '#8a5a32', 0.05);
+    ctx.beginPath(); ctx.moveTo(-0.38, -0.02); ctx.quadraticCurveTo(0, -0.26, 0.38, -0.02); ctx.lineTo(0.3, -0.12); ctx.quadraticCurveTo(0, -0.3, -0.3, -0.12); ctx.closePath();
+    ink(ctx, '#c9ced8', 0.05); ctx.restore();
+  },
+  repair(ctx) {
+    ctx.save(); ctx.rotate(0.7);
+    ctx.beginPath(); ctx.rect(-0.05, -0.1, 0.1, 0.5); ink(ctx, '#8a5a32', 0.06);
+    ctx.beginPath(); ctx.rect(-0.22, -0.38, 0.44, 0.2); ink(ctx, '#9aa5b8', 0.06); ctx.restore();
+    ctx.beginPath(); ctx.arc(-0.2, 0.22, 0.12, 0, Math.PI * 2); ink(ctx, '#6ee36e', 0.05);
+  },
+  power(ctx) {
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.16; ctx.beginPath(); ctx.arc(0, 0.04, 0.3, -1.1, Math.PI + 1.1); ctx.stroke();
+    ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 0.08; ctx.stroke();
+    ctx.beginPath(); ctx.rect(-0.06, -0.42, 0.12, 0.36); ink(ctx, '#ffd34d', 0.06);
+  },
+  up(ctx) { poly(ctx, [[0, -0.4], [0.34, 0], [0.13, 0], [0.13, 0.38], [-0.13, 0.38], [-0.13, 0], [-0.34, 0]]); ink(ctx, '#6ee36e', 0.07); },
+  economy(ctx) {
+    ctx.beginPath(); ctx.moveTo(-0.15, -0.28); ctx.quadraticCurveTo(-0.42, 0.38, 0, 0.38); ctx.quadraticCurveTo(0.42, 0.38, 0.15, -0.28); ctx.closePath();
+    ink(ctx, '#c9a06a', 0.07); ctx.beginPath(); ctx.rect(-0.18, -0.36, 0.36, 0.1); ink(ctx, '#8a5a32', 0.05);
+    ellipse(ctx, 0, 0.1, 0.12, 0.12); ink(ctx, '#ffd34d', 0.04);
+  },
+  production(ctx) { RES_DRAW.parts(ctx); },
+  defense(ctx) {
+    ctx.beginPath(); ctx.rect(-0.22, -0.2, 0.44, 0.58); ink(ctx, '#9aa5b8', 0.07);
+    for (const x of [-0.26, -0.06, 0.14]) { ctx.beginPath(); ctx.rect(x, -0.38, 0.12, 0.2); ink(ctx, '#9aa5b8', 0.05); }
+    ctx.beginPath(); ctx.rect(-0.07, 0.12, 0.14, 0.26); ink(ctx, '#3a2a1a', 0.04);
+  },
+  army(ctx) { UI_DRAW.swords(ctx); },
+  hero(ctx) {
+    ctx.beginPath(); ctx.moveTo(-0.42, -0.2); ctx.lineTo(0.42, -0.2); ctx.lineTo(0.3, -0.04); ctx.lineTo(0.1, -0.04); ctx.lineTo(0.18, 0.2); ctx.lineTo(-0.18, 0.2); ctx.lineTo(-0.1, -0.04); ctx.lineTo(-0.3, -0.04); ctx.closePath();
+    ink(ctx, '#7d8696', 0.07); ctx.beginPath(); ctx.rect(-0.3, 0.2, 0.6, 0.14); ink(ctx, '#5a6478', 0.06);
+    ctx.fillStyle = '#ffd34d'; ellipse(ctx, 0.2, -0.36, 0.05, 0.05); ctx.fill(); ellipse(ctx, 0.32, -0.3, 0.03, 0.03); ctx.fill();
+  },
+  bagAll(ctx) { UI_DRAW.bag(ctx); },
+  melee(ctx) { ctx.scale(1.15, 1.15); ctx.rotate(0.7); drawItem(ctx, ITEMS.swordSteel || Object.values(ITEMS)[0], { s: 0.7 }); },
+  ranged(ctx) { ctx.rotate(-0.7); drawItem(ctx, Object.values(ITEMS).find((i) => i.wtype === 'bow'), { s: 0.75 }); },
+  magic(ctx) { ctx.rotate(0.6); drawItem(ctx, Object.values(ITEMS).find((i) => i.wtype === 'fireStaff'), { s: 0.62 }); },
+  gear(ctx) { ctx.scale(0.75, 0.75); UI_DRAW.armor(ctx); },
+  trinket(ctx) {
+    ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = 0.05; ctx.beginPath(); ctx.arc(0, -0.15, 0.28, Math.PI * 0.15, Math.PI * 0.85, true); ctx.stroke();
+    poly(ctx, [[0, 0.02], [0.18, 0.2], [0, 0.42], [-0.18, 0.2]]); ink(ctx, '#b05aff', 0.05);
+  },
+  medal(ctx) {
+    poly(ctx, [[-0.22, -0.42], [-0.04, -0.42], [0.06, -0.1], [-0.1, -0.06]]); ink(ctx, '#d93a3a', 0.05);
+    poly(ctx, [[0.22, -0.42], [0.04, -0.42], [-0.06, -0.1], [0.1, -0.06]]); ink(ctx, '#2f6fe0', 0.05);
+    ellipse(ctx, 0, 0.14, 0.26, 0.26); ink(ctx, '#ffd34d', 0.07);
+    ctx.fillStyle = '#c9902a'; ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 - Math.PI / 2; const r = i % 2 ? 0.06 : 0.15; ctx.lineTo(Math.cos(a) * r, 0.14 + Math.sin(a) * r); }
+    ctx.closePath(); ctx.fill();
+  },
+  gemPile(ctx) {
+    for (const [x, y, k] of [[-0.2, 0.12, 0.7], [0.2, 0.14, 0.7], [0, -0.04, 0.85]]) { ctx.save(); ctx.translate(x, y); ctx.scale(k, k); RES_DRAW.gems(ctx); ctx.restore(); }
+  },
+  gemChest(ctx) {
+    ctx.beginPath(); ctx.rect(-0.38, -0.02, 0.76, 0.38); ink(ctx, '#8a5a32', 0.07);
+    ctx.save(); ctx.translate(0, -0.12); ctx.scale(0.55, 0.55); UI_DRAW.gemPile(ctx); ctx.restore();
+    ctx.beginPath(); ctx.rect(-0.38, -0.02, 0.76, 0.1); ink(ctx, '#f2c14e', 0.05);
+    ctx.beginPath(); ctx.rect(-0.07, 0.06, 0.14, 0.14); ink(ctx, '#f2c14e', 0.04);
+  },
+  ad(ctx) {
+    rrectIcon(ctx); poly(ctx, [[-0.1, -0.16], [0.18, 0], [-0.1, 0.16]]); ctx.fillStyle = '#fff'; ctx.fill();
+  },
   swords(ctx) {
-    for (const r of [-0.7, 0.7]) {
+    for (const r of [-0.72, 0.72]) {
       ctx.save(); ctx.rotate(r);
-      poly(ctx, [[-0.05, 0.1], [-0.05, -0.38], [0, -0.45], [0.05, -0.38], [0.05, 0.1]]); ink(ctx, '#d6dce6', 0.05);
-      ctx.beginPath(); ctx.rect(-0.14, 0.08, 0.28, 0.06); ink(ctx, '#f2c14e', 0.04);
+      poly(ctx, [[-0.09, 0.12], [-0.09, -0.36], [0, -0.48], [0.09, -0.36], [0.09, 0.12]]); ink(ctx, '#e6ebf2', 0.06);
+      ctx.fillStyle = '#9aa5b8'; ctx.fillRect(0.01, -0.36, 0.06, 0.46);
+      ctx.beginPath(); ctx.rect(-0.2, 0.1, 0.4, 0.09); ink(ctx, '#f2c14e', 0.05);
+      ctx.beginPath(); ctx.rect(-0.045, 0.19, 0.09, 0.2); ink(ctx, '#8a5a32', 0.04);
       ctx.restore();
     }
   },
+
 };
 
-export function uiIcon(name) {
-  return render('ui-' + name, 36, 36, (ctx) => {
-    ctx.translate(18, 18);
-    ctx.scale(30, 30);
+function rrectIcon(ctx) {
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 0.4, 0.32, 0, 0, Math.PI * 2);
+  ink(ctx, '#7a5aff', 0.07);
+}
+
+export function uiIcon(name, size = 36) {
+  return render(`ui-${name}-${size}`, size, size, (ctx) => {
+    ctx.translate(size / 2, size / 2);
+    ctx.scale(size * 0.83, size * 0.83);
     (UI_DRAW[name] || UI_DRAW.menu)(ctx);
   });
 }

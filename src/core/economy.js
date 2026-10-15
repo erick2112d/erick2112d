@@ -26,8 +26,15 @@ export const economyMixin = {
   addRes(k, v) {
     const before = this.res[k] || 0;
     this.res[k] = Math.min(this.capOf(k), before + v);
-    return Math.max(0, this.res[k] - before);
+    const added = Math.max(0, this.res[k] - before);
+    if (added > 0 && MATERIALS[k] && !this.found.includes(k)) {
+      this.found.push(k);
+      if (this.time > 1) this.emit('found', { res: k });
+    }
+    return added;
   },
+
+  isFound(k) { return !MATERIALS[k] || this.found.includes(k) || (this.res[k] || 0) > 0; },
 
   has(k) { return Math.floor(this.res[k] || 0); },
 

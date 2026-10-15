@@ -236,6 +236,73 @@ export const buildingsMixin = {
     return true;
   },
 
+  // ---------- снос ----------
+
+  // Возврат за снос: половина цены постройки и всех её улучшений (у разрушенной — четверть).
+  demolishRefund(b) {
+    const cfg = BUILDINGS[b.type];
+    const total = { ...(cfg.cost || {}) };
+    for (let lvl = 1; lvl < b.level; lvl++) {
+      for (const [k, v] of Object.entries(this.upgradeCost({ type: b.type, level: lvl }))) total[k] = (total[k] || 0) + v;
+    }
+    const k = (b.destroyed ? 0.5 : 1) * WORLD.demolishRefund;
+    const out = {};
+    for (const [r, v] of Object.entries(total)) {
+      if (r === 'gems') continue;
+      const n = Math.floor(v * k);
+      if (n > 0) out[r] = n;
+    }
+    return out;
+  },
+
+  canDemolish(b) {
+    if (!b || b.type === 'heart') return { ok: false, reason: 'Сердце снести нельзя' };
+    if (this.phase === 'wave') return { ok: false, reason: 'Сносить можно только между волнами' };
+    return { ok: true };
+  },
+
+  demolish(id) {
+    const b = this.byId(id);
+    const check = this.canDemolish(b);
+    if (!check.ok) {
+      this.emit('toast', { text: check.reason, bad: true });
+      return false;
+    }
+    const refund = this.demolishRefund(b);
+    const cfg = BUILDINGS[b.type];
+    for (let y = b.ty; y < b.ty + b.size; y++) {
+      for (let x = b.tx; x < b.tx + b.size; x++) {
+        const i = this.idx(x, y);
+        if (this.grid[i] === b.id) this.grid[i] = 0;
+      }
+    }
+    b.destroyed = true;
+    b.removed = true;
+    this.buildings = this.buildings.filter((o) => o !== b);
+    this.bMap.delete(b.id);
+    // жители постройки уходят вместе с ней
+    for (const list of [this.allies, this.workers]) {
+      for (const u of list) if (u.home === b.id && !u.dead) { u.dead = true; this.emit('poof', { x: u.x, y: u.y }); }
+    }
+    this.repairers = this.repairers.filter((r) => r.home !== b.id);
+    for (const r of this.repairers) if (r.task === b.id) r.task = 0;
+    this.flowDirty = true;
+    this.auraDirty = true;
+    if (cfg.wall) this.wallsDirty = true;
+    const c = { x: b.tx + b.size / 2, y: b.ty + b.size / 2 };
+    let i = 0;
+    for (const [r, v] of Object.entries(refund)) {
+      const got = this.addRes(r, v);
+      if (got > 0) this.emit('gain', { x: c.x, y: c.y - 0.6 - i++ * 0.45, res: r, amount: Math.round(got) });
+    }
+    this.stats.demolished = (this.stats.demolished || 0) + 1;
+    if (b.type === 'trainingHall') this.refreshHeroStats();
+    this.recomputeEnergy();
+    this.emit('demolished', { id: b.id, x: c.x, y: c.y, size: b.size, building: b.type });
+    this.emit('save');
+    return true;
+  },
+
   toggleEnabled(id) {
     const b = this.byId(id);
     if (!b) return;

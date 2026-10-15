@@ -1042,15 +1042,133 @@ export function wallArt(ctx, level, mask, gate, destroyed, path = null) {
     return;
   }
   const h = 0.62;
+  const horiz = (mask & 10) !== 0;
+  const vert = !horiz && (mask & 5) !== 0;
+  // кол частокола, когда забор уходит вдаль (север–юг): видим его ребром, колья заходят друг за друга
+  const vPicket = (y, tone) => {
+    const c = shade(col, tone);
+    poly(ctx, [[-0.17, y], [-0.17, y - h + 0.06], [-0.02, y - h - 0.12], [0.17, y - h + 0.04], [0.17, y]]);
+    ink(ctx, c, 0.03);
+    ctx.fillStyle = shade(c, -0.22);
+    poly(ctx, [[0.09, y - 0.02], [0.09, y - h + 0.02], [0.15, y - h + 0.05], [0.15, y - 0.02]]);
+    ctx.fill();
+    ctx.fillStyle = shade(c, 0.25);
+    ctx.fillRect(-0.12, y - h + 0.1, 0.04, h - 0.18);
+    ctx.fillStyle = shade(c, -0.18);
+    ctx.fillRect(-0.15, y - h * 0.55, 0.3, 0.04);
+  };
+  const vPalisade = (from) => {
+    for (let k = from; k <= 0; k++) vPicket(k * 0.34, k % 2 ? -0.08 : 0);
+  };
+  // каменная стена вдоль оси север–юг: верх уходит к соседу, лицевая грань видна у самой южной секции
+  const vStone = () => {
+    const w = 0.22;
+    const yTop = mask & 1 ? -1 - h : -h - 0.1;
+    ctx.beginPath();
+    ctx.rect(-w, yTop, w * 2, -h - yTop);
+    ink(ctx, top, 0.035);
+    ctx.fillStyle = shade(top, -0.2);
+    ctx.fillRect(-w + 0.08, yTop + (mask & 1 ? 0 : 0.03), (w - 0.08) * 2, -h - yTop - 0.03);
+    for (let y = -h - 0.02; y > yTop + 0.12; y -= 0.34) {
+      for (const x of [-w, w - 0.09]) {
+        ctx.beginPath();
+        ctx.rect(x, y - 0.17, 0.09, 0.17);
+        ink(ctx, shade(top, 0.12), 0.022);
+        ctx.fillStyle = shade(top, -0.12);
+        ctx.fillRect(x + 0.01, y - 0.05, 0.07, 0.04);
+      }
+    }
+    ctx.beginPath();
+    ctx.rect(-w, -h, w * 2, h);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    stoneCourses(ctx, -w, -h, w * 2, h, 4, col, level * 7 + 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(w * 0.35, -h, w, h);
+    ctx.restore();
+    ctx.beginPath();
+    ctx.rect(-w, -h, w * 2, h);
+    ink(ctx, null);
+    if (metal) {
+      ctx.strokeStyle = '#c9ced8';
+      ctx.lineWidth = 0.03;
+      ctx.beginPath();
+      ctx.moveTo(-w, -h * 0.5); ctx.lineTo(w, -h * 0.5);
+      ctx.stroke();
+      ctx.fillStyle = '#4a4a55';
+      ellipse(ctx, 0, -h * 0.5, 0.035, 0.035);
+      ctx.fill();
+    }
+  };
+  if (gate && vert) {
+    // ворота вдоль оси север–юг: створка между двумя столбами, видна сбоку
+    const wood = stone ? '#6a6a7a' : '#8a5a32';
+    const post = (y) => {
+      ctx.beginPath();
+      ctx.rect(-0.17, y - h - 0.22, 0.34, h + 0.22);
+      ink(ctx, wood, 0.035);
+      ctx.fillStyle = shade(wood, -0.25);
+      ctx.fillRect(0.07, y - h - 0.2, 0.08, h + 0.18);
+      ctx.beginPath();
+      ctx.rect(-0.2, y - h - 0.32, 0.4, 0.12);
+      ink(ctx, top, 0.03);
+    };
+    if (mask & 1) vPicket(-0.9, -0.08);
+    post(-0.72);
+    // створка приоткрыта наружу, чтобы её было видно
+    const H = h * 0.85;
+    const A = [0.12, -0.7];
+    const B = [0.5, -0.24];
+    poly(ctx, [A, [A[0], A[1] - H], [B[0], B[1] - H], B]);
+    ink(ctx, '#7a4524', 0.03);
+    ctx.strokeStyle = '#4a2a14';
+    ctx.lineWidth = 0.02;
+    for (const k of [0.25, 0.5, 0.75]) {
+      const x = A[0] + (B[0] - A[0]) * k;
+      const y = A[1] + (B[1] - A[1]) * k;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - H); ctx.stroke();
+    }
+    ctx.strokeStyle = '#4a4a55';
+    ctx.lineWidth = 0.05;
+    for (const k of [0.22, 0.72]) {
+      ctx.beginPath(); ctx.moveTo(A[0], A[1] - H * k); ctx.lineTo(B[0], B[1] - H * k); ctx.stroke();
+    }
+    post(0);
+    // фонарь на переднем столбе
+    ctx.fillStyle = '#ffd36b';
+    ellipse(ctx, 0, -h - 0.42, 0.06, 0.07);
+    ink(ctx, '#ffd36b', 0.025);
+    return;
+  }
+  if (vert) {
+    if (stone) vStone();
+    else {
+      vPalisade(mask & 1 ? -2 : 0);
+    }
+    if (path) {
+      ctx.fillStyle = EVO[path];
+      ctx.fillRect(-0.05, -h * 0.6, 0.1, 0.06);
+    }
+    return;
+  }
   // перемычки к соседям
   const conn = (dx, w) => {
     ctx.beginPath();
     ctx.rect(dx, -h + 0.08, w, h - 0.12);
     ink(ctx, col, 0.035);
   };
+  if (mask & 1) {
+    // угол: забор уходит на север
+    if (stone) {
+      ctx.beginPath();
+      ctx.rect(-0.22, -1 - h, 0.44, 1);
+      ink(ctx, top, 0.035);
+    } else { vPicket(-0.68, -0.08); vPicket(-0.34, 0); }
+  }
   if (mask & 8) conn(-0.5, 0.36);
   if (mask & 2) conn(0.14, 0.36);
-  if (mask & 1) { ctx.beginPath(); ctx.rect(-0.16, -h - 0.5, 0.32, 0.5); ink(ctx, shade(col, -0.1), 0.035); }
   if (gate) {
     // ворота: две створки с аркой
     ctx.beginPath();

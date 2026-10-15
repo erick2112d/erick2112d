@@ -10,6 +10,7 @@ export const WORLD = {
   heroRespawnSeconds: 5,
   heroRegenPerSecond: 3,
   repairWoodPerHp: 0.1,
+  demolishRefund: 0.5,
   manualRepairMultiplier: 1.5,
   heartRestoreAfterDefeat: 0.35,
   autoSaveSeconds: 15,

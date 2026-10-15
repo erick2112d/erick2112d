@@ -1,7 +1,7 @@
 // Игровая симуляция «Последнего Светоча». Не знает ничего о DOM и отрисовке:
 // презентация читает состояние и забирает события через drainEvents().
 // Методы разнесены по модулям-примесям (world, economy, buildings, hero, combat, units, activities, progress).
-import { WORLD, STARTING_ITEMS } from '../data/index.js';
+import { WORLD, STARTING_ITEMS, MATERIALS } from '../data/index.js';
 import { worldMixin } from './world.js';
 import { economyMixin } from './economy.js';
 import { buildingsMixin } from './buildings.js';
@@ -44,6 +44,7 @@ export class Game {
     this.energy = { supply: 0, demand: 0, deficit: 0, used: 0 };
     this.stats = { kills: 0, bosses: 0, built: 0, walls: 0, crafted: 0, legendary: 0, evolutions: 0, chests: 0, rifts: 0, notes: 0, gathered: 0, bestWave: 0 };
     this.achievements = [];
+    this.found = [];               // материалы, которые уже попадали в руки
     this.inventory = { items: [...STARTING_ITEMS], equipped: { weapon: 'swordWood', armor: null, amulet: null, ring: null }, hotbar: ['swordWood', null, null] };
     this.activities = { chests: [], shrines: [], rifts: [], notes: [], notesTaken: [], merchant: null, buff: null, chestTimer: 40, riftTimer: 90 };
     this.zoneTimers = {};
@@ -62,7 +63,7 @@ export class Game {
   }
 
   newGame() {
-    for (const [k, v] of Object.entries(WORLD.startResources)) this.res[k] = v;
+    for (const [k, v] of Object.entries(WORLD.startResources)) { this.res[k] = v; if (MATERIALS[k] && v > 0) this.found.push(k); }
     const h = WORLD.heart;
     this.addBuilding('heart', h.tx, h.ty, { free: true });
     this.generateMap();
@@ -146,6 +147,7 @@ export class Game {
       story: { seen: [...this.story.seen], unread: [...this.story.unread] },
       stats: { ...this.stats },
       achievements: [...this.achievements],
+      found: [...this.found],
       settings: { ...this.settings },
       shop: { ...this.shop },
     };
@@ -183,6 +185,7 @@ export class Game {
     this.story = { seen: [...s.story.seen], unread: [...s.story.unread] };
     this.stats = { ...this.stats, ...s.stats };
     this.achievements = [...(s.achievements || [])];
+    this.found = [...(s.found || Object.keys(this.res).filter((k) => this.res[k] > 0))];
     this.settings = { ...this.settings, ...s.settings };
     this.shop = { ...this.shop, ...s.shop };
     this.nextId = Math.max(this.nextId, s.nextId || 0);

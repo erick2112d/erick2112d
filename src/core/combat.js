@@ -138,7 +138,7 @@ export const combatMixin = {
     }
     u.hp -= dmg;
     u.hitTime = this.time;
-    this.emit('damage', { x: u.x, y: u.y - 0.9, amount: Math.round(dmg), friendly: true });
+    this.emit('damage', { x: u.x, y: u.y - 0.9, amount: Math.round(dmg), friendly: true, hero: u === this.hero });
     if (u.hp <= 0) {
       u.hp = 0;
       u.dead = true;

@@ -17,7 +17,7 @@ const viewport = { width: 1280, height: 760 };
 const context = await browser.newContext({ viewport });
 const page = await context.newPage();
 const errors = [];
-page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('pageerror', (e) => { errors.push('pageerror: ' + e.message); console.log('• ОШИБКА СТРАНИЦЫ:', e.stack || e.message); });
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
 const log = (...a) => console.log('•', ...a);
@@ -89,6 +89,8 @@ async function chopUntil(res, amount, timeout = 70000) {
     }, kinds);
     if (!node) { await sleep(500); continue; }
     await walkTo(node.x, node.y, 1.45, 9000);
+    const fr = await ev(() => ({ modal: window.__LL.hud.modal, win: window.__LL.hud.window?.kind || null, t: window.__LL.game.time }));
+    if (fr.modal || fr.win) log(`окно мешает добыче: ${JSON.stringify(fr)}`);
     const t1 = Date.now();
     while (Date.now() - t1 < 4000) {
       if (!(await ev((id) => !!window.__LL.game.nodeById(id), node.id))) break;
@@ -288,7 +290,7 @@ try {
   check((await st()).weapon === 'swordWood', 'быстрый слот 1 переключил оружие');
 
   // 6. Эволюция башни на 10 уровне
-  await ev(() => { const g = window.__LL.game; for (let i = 0; i < 6; i++) g.upgradeHeart(); g.res.gold = 9000; g.res.planks = 400; g.res.iron = 200; g.res.bricks = 200; });
+  await ev(() => { const g = window.__LL.game; for (const k of ['wood', 'stone', 'planks', 'bricks', 'iron', 'coal', 'bones', 'ore']) g.res[k] = 300; g.res.food = 500; g.res.gold = 9000; for (let i = 0; i < 6; i++) g.upgradeHeart(); g.res.gold = 9000; g.res.planks = 300; g.res.iron = 200; g.res.bricks = 200; });
   await closeModals();
   const tower = (await st()).buildings.find((b) => b.type === 'archerTower');
   await clickBuilding(tower.id);

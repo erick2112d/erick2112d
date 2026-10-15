@@ -68,9 +68,24 @@ export class Renderer {
 
   consume(events, audio) {
     const fx = this.fx;
+    const halfW = this.w / 2 / this.scale;
     for (const e of events) {
+      // стерео и громкость по положению на экране: далёкое — тише и в сторону
+      let snd = null;
+      if (audio) {
+        let pan = 0;
+        let near = 1;
+        if (typeof e.x === 'number') {
+          const dx = (e.x - this.cam.x) / halfW;
+          const dy = (e.y - this.cam.y) / (halfW * 0.7);
+          pan = clamp(dx * 0.75, -0.85, 0.85);
+          near = clamp(1.35 - Math.hypot(dx, dy) * 0.45, 0.25, 1);
+        }
+        snd = { play: (name, v = 1) => audio.play(name, v * near, pan) };
+      }
       switch (e.type) {
         case 'damage':
+          if (e.friendly && e.hero) snd?.play('hurt', 0.7);
           fx.text(e.x + (Math.random() - 0.5) * 0.4, e.y, String(e.amount), e.friendly ? '#ff6b6b' : e.crit ? '#ffd34d' : e.armor ? '#cfd6e2' : '#fff6d5', { size: e.crit ? 1.15 : 0.8 });
           break;
         case 'gain':
@@ -81,7 +96,7 @@ export class Renderer {
           fx.burst(e.x, e.y, tree
             ? { count: 6, color: ['#c98a4b', '#4c8a46', '#346a3c'], shape: 'rect', size: 0.07, speed: 3, up: 3, outline: true }
             : { count: 6, color: e.kind === 'crystal' ? ['#7ff3ff', '#ffffff'] : ['#a9b0bd', '#7d8696'], shape: 'rect', size: 0.07, speed: 3, up: 3, outline: true });
-          audio?.play(tree ? 'chop' : 'rock', 0.8);
+          snd?.play(tree ? 'chop' : 'rock', 0.8);
           break;
         }
         case 'nodeBreak':
@@ -94,15 +109,15 @@ export class Renderer {
         case 'swing':
           fx.trail(e.x, e.y, e.angle, e.range, SWING_COLORS[e.kind] || SWING_COLORS.slash, e.arc, e.kind);
           if (e.tier >= 5) fx.burst(e.x + Math.cos(e.angle) * 0.8, e.y + Math.sin(e.angle) * 0.6, { count: 6, color: [W.METAL[e.tier], '#ffffff'], speed: 2, up: 2, size: 0.05, glow: true, life: 0.35 });
-          audio?.play('swing');
+          snd?.play('swing');
           break;
         case 'shoot':
-          if (e.kind === 'fireball') audio?.play('fire');
-          else if (e.kind === 'lightning') audio?.play('zap');
-          else if (e.kind === 'ice') audio?.play('ice');
-          else if (e.kind === 'ballista') audio?.play('thud');
-          else if (e.kind === 'enemy') audio?.play('bow', 0.4);
-          else audio?.play('bow', 0.7);
+          if (e.kind === 'fireball') snd?.play('fire');
+          else if (e.kind === 'lightning') snd?.play('zap');
+          else if (e.kind === 'ice') snd?.play('ice');
+          else if (e.kind === 'ballista') snd?.play('thud');
+          else if (e.kind === 'enemy') snd?.play('bow', 0.4);
+          else snd?.play('bow', 0.7);
           break;
         case 'explode': {
           const ice = e.kind === 'ice' || e.kind === 'frost';
@@ -111,7 +126,7 @@ export class Renderer {
           fx.ring(e.x, e.y, e.r * 2.2, col[0], { fill: ice ? 'rgba(150,230,255,0.3)' : orb ? 'rgba(180,120,255,0.3)' : 'rgba(255,140,40,0.35)', life: 0.35, width: 0.2 });
           fx.burst(e.x, e.y, { count: 16, color: col, speed: 4, up: 3, size: 0.11, glow: true, life: 0.5 });
           fx.addShake(0.08);
-          audio?.play(ice ? 'ice' : 'boom', 0.7);
+          snd?.play(ice ? 'ice' : 'boom', 0.7);
           break;
         }
         case 'flame':
@@ -120,32 +135,32 @@ export class Renderer {
             const a = (i / 10) * Math.PI * 2;
             fx.burst(e.x + Math.cos(a) * e.r * 0.6, e.y + Math.sin(a) * e.r * 0.4, { count: 2, color: ['#ff7a2a', '#ffd34d'], speed: 1, up: 3, size: 0.12, glow: true, life: 0.5, grav: -2 });
           }
-          audio?.play('fire', 0.5);
+          snd?.play('fire', 0.5);
           break;
         case 'blast':
           fx.ring(e.x, e.y, e.r * 2.2, '#c8ff3a', { fill: 'rgba(160,220,60,0.35)', life: 0.5, width: 0.25 });
           fx.burst(e.x, e.y, { count: 26, color: ['#c8ff3a', '#7a9a4a', '#e8ff9a'], speed: 5, up: 4, size: 0.14, life: 0.7 });
           fx.addShake(0.3);
-          audio?.play('boom');
+          snd?.play('boom');
           break;
         case 'heal':
           fx.burst(e.x, e.y - 0.4, { count: 4, color: ['#ff7aff', '#ffffff'], speed: 0.5, up: 3, size: 0.06, glow: true, life: 0.6, grav: 1 });
           break;
         case 'summon':
           fx.ring(e.x, e.y, 2.5, '#5aff8a', { life: 0.5 });
-          audio?.play('summon');
+          snd?.play('summon');
           break;
         case 'burn':
           fx.burst(e.x, e.y - 0.4, { count: 2, color: ['#ff7a2a', '#ffd34d'], speed: 0.5, up: 2, size: 0.08, glow: true, life: 0.4, grav: -2 });
           break;
         case 'spikes':
           fx.burst(e.x, e.y, { count: 5, color: ['#c9ced8', '#ff6b6b'], speed: 2, up: 3, size: 0.05, life: 0.3 });
-          audio?.play('hit', 0.6);
+          snd?.play('hit', 0.6);
           break;
         case 'arrowHit':
         case 'allyHit':
           fx.burst(e.x, e.y, { count: 5, color: ['#fff6d5', '#ffd34d'], speed: 3, up: 2, size: 0.05, glow: true, life: 0.3 });
-          audio?.play('hit', 0.6);
+          snd?.play('hit', 0.6);
           break;
         case 'enemyHit':
           fx.burst(e.x, e.y - 0.3, { count: 4, color: '#ff6b6b', speed: 2, up: 2, size: 0.05, life: 0.3 });
@@ -153,17 +168,26 @@ export class Renderer {
           break;
         case 'buildingHit':
           fx.burst(e.x, e.y, { count: 3, color: ['#8a92a0', '#c98a4b'], shape: 'rect', speed: 2, up: 3, size: 0.06, outline: true });
-          audio?.play('thud', 0.4);
+          snd?.play('thud', 0.4);
+          break;
+        case 'demolished':
+          fx.burst(e.x, e.y, { count: 14 + e.size * 6, color: ['#8a92a0', '#a0683a', '#c9a06a'], shape: 'rect', speed: 4, up: 4, size: 0.1, outline: true, life: 0.8 });
+          fx.burst(e.x, e.y, { count: 10, color: ['rgba(200,190,170,0.6)'], speed: 1.5, up: 1.5, size: 0.35, life: 1.1, grav: -0.5 });
+          fx.addShake(0.12);
+          snd?.play('demolish');
+          break;
+        case 'found':
+          snd?.play('gem', 0.8);
           break;
         case 'collapse':
           fx.burst(e.x, e.y, { count: 18 + e.size * 6, color: ['#5a5f70', '#7a5a3a', '#8a92a0'], shape: 'rect', speed: 5, up: 5, size: 0.12, outline: true, life: 0.9 });
           fx.ring(e.x, e.y, e.size * 1.5, 'rgba(200,200,200,0.6)', { life: 0.5 });
           fx.addShake(0.25);
-          audio?.play('collapse', e.size > 1 ? 1 : 0.5);
+          snd?.play('collapse', e.size > 1 ? 1 : 0.5);
           break;
         case 'death':
           this.deathFx(e);
-          audio?.play(e.boss ? 'bossDie' : 'bones', 0.8);
+          snd?.play(e.boss ? 'bossDie' : 'bones', 0.8);
           break;
         case 'spawn':
           fx.burst(e.x, e.y, { count: 10, color: ['#6a4a8a', '#3a2a50', '#8a6aaa'], speed: 1.5, up: 2, size: 0.18, life: 0.8, grav: -1 });
@@ -177,20 +201,20 @@ export class Renderer {
         case 'built':
           fx.burst(e.x, e.y, { count: 14, color: ['#e6c27a', '#c98a4b', '#ffffff'], shape: 'rect', speed: 4, up: 4, size: 0.08, outline: true });
           fx.ring(e.x, e.y, 2.2, '#f2c14e', { life: 0.45 });
-          audio?.play(BUILDINGS[e.building]?.wall ? 'thud' : 'build', BUILDINGS[e.building]?.wall ? 0.5 : 1);
+          snd?.play(BUILDINGS[e.building]?.wall ? 'thud' : 'build', BUILDINGS[e.building]?.wall ? 0.5 : 1);
           break;
         case 'upgraded':
           fx.burst(e.x, e.y - 0.5, { count: 20, color: ['#f2c14e', '#fff3c4'], speed: 3, up: 5, size: 0.07, glow: true, life: 0.8, grav: 4 });
           fx.ring(e.x, e.y, 2.6, '#f2c14e', { life: 0.5 });
           fx.text(e.x, e.y - 1.5, `Уровень ${e.level}`, '#f2c14e', { size: 1.05, life: 1.2 });
-          audio?.play('upgrade');
+          snd?.play('upgrade');
           break;
         case 'evolved':
           fx.ring(e.x, e.y, 4, '#ff7aff', { life: 0.8, width: 0.25 });
           fx.burst(e.x, e.y - 1, { count: 40, color: ['#ff7aff', '#7ff3ff', '#ffd34d'], speed: 4, up: 7, size: 0.08, glow: true, life: 1.2, grav: 3 });
           fx.text(e.x, e.y - 2.2, e.name, '#ff9af0', { size: 1.2, life: 2 });
           fx.addShake(0.2);
-          audio?.play('beacon');
+          snd?.play('evolve');
           break;
         case 'repaired':
           fx.burst(e.x, e.y - 0.4, { count: 10, color: ['#7dff9a', '#ffffff'], speed: 2, up: 4, size: 0.06, glow: true, life: 0.7, grav: 3 });
@@ -198,7 +222,7 @@ export class Renderer {
         case 'heroDown':
           fx.burst(e.x, e.y, { count: 18, color: ['#1f6fd1', '#f2c14e', '#ffffff'], speed: 4, up: 4, size: 0.1, life: 0.8 });
           fx.addShake(0.3);
-          audio?.play('heroDown');
+          snd?.play('heroDown');
           break;
         case 'allyDown':
           fx.burst(e.x, e.y, { count: 10, color: ['#2f80d8', '#9aa5b8'], speed: 3, up: 3, size: 0.08, life: 0.6 });
@@ -206,14 +230,14 @@ export class Renderer {
         case 'respawn':
           fx.ring(e.x, e.y, 2.5, '#7ff3ff', { life: 0.6, width: 0.2 });
           fx.burst(e.x, e.y, { count: 20, color: ['#7ff3ff', '#ffffff'], speed: 2, up: 6, size: 0.06, glow: true, life: 0.9, grav: 2 });
-          audio?.play('respawn');
+          snd?.play('respawn');
           break;
         case 'heartUp':
           this.lightWave = { t: 0, x: e.x, y: e.y, r: e.radius };
           fx.burst(e.x, e.y - 2.5, { count: 50, color: ['#ffd34d', '#fff3c4', '#7ff3ff'], speed: 6, up: 9, size: 0.1, glow: true, life: 1.4, grav: 3 });
           fx.text(e.x, e.y - 3.6, `Сердце: уровень ${e.level}`, '#ffe08a', { size: 1.3, life: 2 });
           fx.addShake(0.35);
-          audio?.play('beacon');
+          snd?.play('beacon');
           break;
         case 'chestSpawn':
           fx.burst(e.x, e.y, { count: 10, color: ['#ffd34d', '#ffffff'], speed: 1, up: 4, size: 0.05, glow: true, life: 0.8, grav: 2 });
@@ -221,35 +245,35 @@ export class Renderer {
         case 'chestOpen':
           fx.burst(e.x, e.y - 0.3, { count: 26, color: ['#ffd34d', '#fff3c4', '#ff9af0'], speed: 4, up: 6, size: 0.08, glow: true, life: 1, grav: 5 });
           fx.ring(e.x, e.y, 2, '#ffd34d', { life: 0.5 });
-          audio?.play('chest');
+          snd?.play('chest');
           break;
         case 'shrine':
           fx.ring(e.x, e.y, 3, '#7ff3ff', { life: 0.7, width: 0.25 });
           fx.burst(e.x, e.y - 1.2, { count: 30, color: ['#7ff3ff', '#ffffff'], speed: 3, up: 6, size: 0.07, glow: true, life: 1, grav: 3 });
-          audio?.play('respawn');
+          snd?.play('respawn');
           break;
         case 'note':
           fx.burst(e.x, e.y - 0.6, { count: 14, color: ['#fff3c4', '#ffffff'], speed: 2, up: 4, size: 0.05, glow: true, life: 0.8, grav: 2 });
-          audio?.play('page');
+          snd?.play('page');
           break;
         case 'riftOpen':
           fx.ring(e.x, e.y, 3, '#b07aff', { life: 0.8, width: 0.3 });
-          audio?.play('summon');
+          snd?.play('summon');
           break;
         case 'riftClosed':
           fx.ring(e.x, e.y, 4, '#ffffff', { life: 0.6, width: 0.3 });
           fx.burst(e.x, e.y - 0.5, { count: 34, color: ['#b07aff', '#ffffff', '#5a1a8a'], speed: 5, up: 5, size: 0.1, glow: true, life: 1 });
           fx.addShake(0.3);
-          audio?.play('boom');
+          snd?.play('boom');
           break;
         case 'merchant':
           fx.burst(e.x, e.y - 0.8, { count: 18, color: ['#ffd34d', '#ffffff'], speed: 2, up: 5, size: 0.06, glow: true, life: 1, grav: 3 });
           break;
-        case 'waveStart': audio?.play('horn'); break;
-        case 'victory': audio?.play('victory'); break;
-        case 'defeat': fx.addShake(0.5); audio?.play('defeat'); break;
-        case 'crafted': audio?.play('upgrade'); break;
-        case 'achievement': audio?.play('victory', 0.6); break;
+        case 'waveStart': snd?.play('horn'); break;
+        case 'victory': snd?.play('victory'); break;
+        case 'defeat': fx.addShake(0.5); snd?.play('defeat'); break;
+        case 'crafted': snd?.play('upgrade'); break;
+        case 'achievement': snd?.play('victory', 0.6); break;
         default:
       }
     }
@@ -502,6 +526,15 @@ export class Renderer {
     for (const e of g.enemies) if (visible(e.x, e.y)) items.push({ y: e.y + (e.flying ? 1.5 : 0), draw: () => this.drawUnit(ctx, e, ENEMIES[e.type].look) });
     items.sort((p, q) => p.y - q.y);
     for (const it of items) it.draw();
+    // герой за зданием просвечивает, чтобы не теряться
+    const h = g.hero;
+    if (!h.dead && g.buildings.some((b) => !b.destroyed && !BUILDINGS[b.type].wall && h.y < b.ty + b.size - 0.05 && h.y > b.ty - 1.6
+      && h.x > b.tx - 0.15 && h.x < b.tx + b.size + 0.15)) {
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      this.drawUnit(ctx, h, 'hero');
+      ctx.restore();
+    }
     for (const p of g.projectiles) this.drawProjectile(ctx, p);
     if (ui.buildType) this.drawGhost(ctx, ui);
   }
@@ -586,7 +619,7 @@ export class Renderer {
     if (cfg.wall) {
       const mask = this.wallMask(b);
       const path = evoPath(b);
-      const sp = sprite(`wall|${b.level}|${mask}|${cfg.gate ? 1 : 0}|${b.destroyed ? 1 : 0}`, [-0.6, -1.4, 0.6, 0.15], (cx) => wallArt(cx, b.level, mask, !!cfg.gate, b.destroyed, path));
+      const sp = sprite(`wall2|${b.level}|${mask}|${cfg.gate ? 1 : 0}|${b.destroyed ? 1 : 0}`, [-0.6, -1.9, 0.6, 0.15], (cx) => wallArt(cx, b.level, mask, !!cfg.gate, b.destroyed, path));
       drawSprite(ctx, sp);
     } else if (b.destroyed) {
       rubble(ctx, b.size, this.time);

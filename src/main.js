@@ -71,6 +71,7 @@ async function boot() {
     toggleSound: () => { audio.unlock(); audio.toggle(); },
     soundOn: () => audio.on,
     click: () => { audio.unlock(); audio.play('click'); },
+    sfx: (name) => audio.play(name),
     modalChanged: () => {},
   });
   const input = new Input(canvas, hud, renderer, () => game);

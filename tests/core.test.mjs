@@ -227,9 +227,36 @@ test('коллайдеры: между зданиями через клетку 
   clearArea(g, tx - 2, ty + 4, tx + 2, ty + 7);
   g.addNode('tree', tx - 1, ty + 5);
   g.addNode('tree', tx, ty + 6);
-  assert.equal(g.clearLine(tx - 1.5, ty + 7.5, tx + 1.5, ty + 4.5, 0.3), false, 'клетки деревьев заняты');
+  assert.equal(g.clearLine(tx - 1.5, ty + 7.5, tx + 1.5, ty + 4.5, 0.3), true, 'между стволами по диагонали видна дорога');
   g.hero.x = tx - 0.6; g.hero.y = ty + 6.4; g.resolveSolids(g.hero);
   assert.ok(Math.hypot(g.hero.x - (tx - 0.6), g.hero.y - (ty + 6.4)) < 0.05, 'между стволами стоять можно');
+});
+
+test('коллайдеры: между зданиями вплотную можно протиснуться, тап ведёт через щель', () => {
+  const g = new Game();
+  rich(g);
+  g.heart().level = 12;
+  const c = g.heartCenter();
+  const tx = Math.floor(c.x) + 3;
+  const ty = Math.floor(c.y) - 3;
+  clearArea(g, tx - 3, ty - 3, tx + 7, ty + 7);
+  assert.ok(g.build('farm', tx, ty) && g.build('farm', tx + 2, ty) && g.build('generator', tx, ty + 2));
+  // вверх по шву между двумя фермами
+  g.hero.x = tx + 2; g.hero.y = ty + 5.5;
+  g.hero.input = { x: 0, y: -1 };
+  step(g, 2.5);
+  assert.ok(g.hero.y < ty - 0.2, 'прошёл шов сверху вниз: ' + g.hero.y.toFixed(2));
+  // вправо по шву между фермой и генератором
+  g.hero.x = tx - 1.5; g.hero.y = ty + 2;
+  g.hero.input = { x: 1, y: 0 };
+  step(g, 2.5);
+  assert.ok(g.hero.x > tx + 2.5, 'прошёл шов слева направо: ' + g.hero.x.toFixed(2));
+  // касание по земле за зданиями — путь через щель
+  g.hero.input = { x: 0, y: 0 };
+  g.hero.x = tx - 1.5; g.hero.y = ty + 2;
+  g.hero.moveTarget = { x: tx + 5.5, y: ty + 2 };
+  step(g, 4);
+  assert.ok(Math.hypot(g.hero.x - (tx + 5.5), g.hero.y - (ty + 2)) < 0.6, 'дошёл по касанию: ' + g.hero.x.toFixed(2) + ',' + g.hero.y.toFixed(2));
 });
 
 test('кузня: изучение оружия, экипировка, быстрые слоты', () => {

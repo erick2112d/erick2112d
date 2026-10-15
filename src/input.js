@@ -79,8 +79,10 @@ export class Input {
     const isTouch = e.pointerType === 'touch';
     if (isTouch && !this.hud.buildType && p.x < this.renderer.w * 0.4 && p.y > this.renderer.h * 0.5 && !this.joy) {
       this.joy = { id: e.pointerId, x0: p.x, y0: p.y, x: p.x, y: p.y };
-      this.joyEl.style.left = `${p.x}px`;
-      this.joyEl.style.top = `${p.y}px`;
+      // интерфейс на больших экранах увеличен через zoom — делим координаты обратно
+      this.zoom = parseFloat(getComputedStyle(this.joyEl.parentElement).zoom) || 1;
+      this.joyEl.style.left = `${p.x / this.zoom}px`;
+      this.joyEl.style.top = `${p.y / this.zoom}px`;
       this.joyEl.classList.remove('hidden');
       this.stick.style.transform = 'translate(-50%, -50%)';
       g.hero.moveTarget = null;
@@ -111,7 +113,7 @@ export class Input {
       const dx = p.x - this.joy.x0;
       const dy = p.y - this.joy.y0;
       const d = Math.hypot(dx, dy);
-      const k = d > 46 ? 46 / d : 1;
+      const k = (d > 46 ? 46 / d : 1) / (this.zoom || 1);
       this.stick.style.transform = `translate(calc(-50% + ${dx * k}px), calc(-50% + ${dy * k}px))`;
       return;
     }

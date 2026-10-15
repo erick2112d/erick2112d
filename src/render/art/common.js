@@ -184,17 +184,22 @@ export function door(ctx, x, y, w, h, color = '#4a2c18') {
 
 // Фундамент-плита по реальному контуру постройки (видно, где она занимает место).
 export function foundation(ctx, w, h, color = '#3c3a46') {
-  // полупрозрачная плита по реальному контуру: видно, где постройка занимает место
+  // мягкое утоптанное пятно земли под постройкой: без жёстких краёв, просто тень и подложка
   ctx.save();
-  ctx.globalAlpha *= 0.5;
-  rrect(ctx, -w / 2 + 0.04, -h + 0.04, w - 0.08, h - 0.08, 0.1);
+  const cy = -h / 2;
+  const r = Math.max(w, h) * 0.62;
+  const g = ctx.createRadialGradient(0, cy, r * 0.25, 0, cy, r);
+  g.addColorStop(0, 'rgba(40,30,24,0.42)');
+  g.addColorStop(0.7, 'rgba(40,30,24,0.22)');
+  g.addColorStop(1, 'rgba(40,30,24,0)');
+  ctx.fillStyle = g;
+  rrect(ctx, -w / 2 - 0.08, -h - 0.05, w + 0.16, h + 0.13, Math.min(w, h) * 0.45);
+  ctx.fill();
+  ctx.globalAlpha *= 0.22;
   ctx.fillStyle = color;
+  rrect(ctx, -w / 2 + 0.12, -h + 0.14, w - 0.24, h - 0.2, Math.min(w, h) * 0.3);
   ctx.fill();
   ctx.restore();
-  rrect(ctx, -w / 2 + 0.04, -h + 0.04, w - 0.08, h - 0.08, 0.1);
-  ctx.lineWidth = 0.03;
-  ctx.strokeStyle = 'rgba(27,19,32,0.55)';
-  ctx.stroke();
 }
 
 export function banner(ctx, x, y, w, h, color, emblem = '#f2c14e', wave = 0) {

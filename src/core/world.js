@@ -252,6 +252,42 @@ export const worldMixin = {
     return Math.hypot(dx, dy);
   },
 
+  // Контур, о который спотыкаются герой и союзники: меньше клетки здания и смещён к его «подошве»,
+  // чтобы между соседними постройками и позади них можно было пройти.
+  colliderBox(b) {
+    const cfg = BUILDINGS[b.type];
+    if (cfg.wall) return { x0: b.tx, y0: b.ty, x1: b.tx + 1, y1: b.ty + 1 };
+    const c = cfg.collider || (b.size >= 3 ? [0.4, 0.75, 0.3] : b.size === 2 ? [0.3, 0.6, 0.15] : [0.22, 0.38, 0.1]);
+    return { x0: b.tx + c[0], y0: b.ty + c[1], x1: b.tx + b.size - c[0], y1: b.ty + b.size - c[2] };
+  },
+
+  // Точка (x, y) занята для союзников с запасом pad?
+  friendBlocked(x, y, pad = 0) {
+    const cx = Math.floor(x);
+    const cy = Math.floor(y);
+    const R = pad > 0 ? 1 : 0;
+    for (let yy = cy - R; yy <= cy + R; yy++) {
+      for (let xx = cx - R; xx <= cx + R; xx++) {
+        if (!this.inBounds(xx, yy)) { if (xx === cx && yy === cy) return true; continue; }
+        const i = this.idx(xx, yy);
+        const bid = this.grid[i];
+        if (bid) {
+          const b = this.bMap.get(bid);
+          if (b && !b.destroyed && this.isSolidCell(i, 'friend')) {
+            const q = this.colliderBox(b);
+            if (x > q.x0 - pad && x < q.x1 + pad && y > q.y0 - pad && y < q.y1 + pad) return true;
+          }
+        }
+        const nid = this.nodeGrid[i];
+        if (nid) {
+          const n = this.nMap.get(nid);
+          if (n && n.hp > 0 && Math.hypot(x - n.x, y - n.y) < n.r + pad) return true;
+        }
+      }
+    }
+    return false;
+  },
+
   // Выталкивает круглое тело из построек (по их реальному контуру) и стволов деревьев.
   resolveSolids(u, who = u.kind === 'enemy' ? 'enemy' : 'friend') {
     const r = u.r;
@@ -271,7 +307,7 @@ export const worldMixin = {
         if (bid && !seen.has(bid)) {
           seen.add(bid);
           const b = this.bMap.get(bid);
-          if (b && !b.destroyed && this.isSolidCell(i, who)) this.pushOutOfRect(u, b);
+          if (b && !b.destroyed && this.isSolidCell(i, who)) this.pushOutOfRect(u, b, who);
         }
         const nid = this.nodeGrid[i];
         if (nid) {
@@ -283,25 +319,32 @@ export const worldMixin = {
     if (who === 'friend') this.clampToTerritory(u);
   },
 
-  pushOutOfRect(u, b) {
-    const inset = BUILDINGS[b.type].inset ?? 0.12;
-    const x0 = b.tx + inset; const x1 = b.tx + b.size - inset;
-    const y0 = b.ty + inset; const y1 = b.ty + b.size - inset;
+  pushOutOfRect(u, b, who = 'enemy') {
+    let x0; let x1; let y0; let y1;
+    let rr = u.r;
+    if (who === 'friend') {
+      ({ x0, y0, x1, y1 } = this.colliderBox(b));
+      rr = u.r * 0.8;
+    } else {
+      const inset = BUILDINGS[b.type].inset ?? 0.12;
+      x0 = b.tx + inset; x1 = b.tx + b.size - inset;
+      y0 = b.ty + inset; y1 = b.ty + b.size - inset;
+    }
     const px = Math.max(x0, Math.min(u.x, x1));
     const py = Math.max(y0, Math.min(u.y, y1));
     let dx = u.x - px;
     let dy = u.y - py;
     const d = Math.hypot(dx, dy);
-    if (d >= u.r) return;
+    if (d >= rr) return;
     if (d < 1e-6) {
       const m = Math.min(u.x - x0, x1 - u.x, u.y - y0, y1 - u.y);
-      if (m === u.x - x0) u.x = x0 - u.r; else if (m === x1 - u.x) u.x = x1 + u.r;
-      else if (m === u.y - y0) u.y = y0 - u.r; else u.y = y1 + u.r;
+      if (m === u.x - x0) u.x = x0 - rr; else if (m === x1 - u.x) u.x = x1 + rr;
+      else if (m === u.y - y0) u.y = y0 - rr; else u.y = y1 + rr;
       return;
     }
     dx /= d; dy /= d;
-    u.x = px + dx * u.r;
-    u.y = py + dy * u.r;
+    u.x = px + dx * rr;
+    u.y = py + dy * rr;
   },
 
   pushOutOfCircle(u, x, y, r) {
@@ -348,6 +391,13 @@ export const worldMixin = {
 
   clearLine(x0, y0, x1, y1, r, who = 'friend') {
     const d = Math.hypot(x1 - x0, y1 - y0);
+    if (who === 'friend') {
+      const steps = Math.ceil(d / 0.2);
+      for (let k = 1; k <= steps; k++) {
+        if (this.friendBlocked(x0 + ((x1 - x0) * k) / steps, y0 + ((y1 - y0) * k) / steps, r * 0.8)) return false;
+      }
+      return true;
+    }
     const steps = Math.ceil(d / 0.3);
     for (let k = 1; k <= steps; k++) {
       const x = x0 + ((x1 - x0) * k) / steps;
@@ -362,18 +412,25 @@ export const worldMixin = {
   },
 
   // Движение с обходом препятствий. false — цель недостижима.
+  // Союзники ищут путь по сетке из полуклеток, поэтому протискиваются между соседними постройками.
   navigate(u, tx, ty, speed, stop, dt) {
+    const who = u.kind === 'enemy' ? 'enemy' : 'friend';
     const d = Math.hypot(tx - u.x, ty - u.y);
-    if (d <= stop || u.flying || this.clearLine(u.x, u.y, tx, ty, u.r)) {
+    if (d <= stop || u.flying || this.clearLine(u.x, u.y, tx, ty, u.r, who)) {
       u.path = null;
       this.moveToward(u, tx, ty, speed, stop, dt);
       return true;
     }
-    const goal = this.idx(Math.floor(tx), Math.floor(ty));
+    const S = who === 'friend' ? 2 : 1;
+    const GW = this.W * S;
+    const sub = (x, y) => Math.floor(x * S) + Math.floor(y * S) * GW;
+    const goal = sub(tx, ty);
     if (!u.path || u.pathGoal !== goal || this.time - u.pathTime > 1) {
-      const start = this.idx(Math.floor(u.x), Math.floor(u.y));
-      const who = u.kind === 'enemy' ? 'enemy' : 'friend';
-      u.path = findPath(this.W, this.H, start, goal, (i) => this.isSolidCell(i, who));
+      const start = sub(u.x, u.y);
+      const solid = S === 1
+        ? (i) => this.isSolidCell(i, who)
+        : (i) => this.friendBlocked(((i % GW) + 0.5) / S, (Math.floor(i / GW) + 0.5) / S, 0.1);
+      u.path = findPath(GW, this.H * S, start, goal, solid, S === 1 ? 4000 : 9000);
       u.pathGoal = goal;
       u.pathTime = this.time;
     }
@@ -381,10 +438,10 @@ export const worldMixin = {
       this.moveToward(u, tx, ty, speed, stop, dt);
       return false;
     }
-    const cellX = (i) => (i % this.W) + 0.5;
-    const cellY = (i) => Math.floor(i / this.W) + 0.5;
-    while (u.path.length > 1 && (Math.hypot(cellX(u.path[0]) - u.x, cellY(u.path[0]) - u.y) < 0.35
-      || this.clearLine(u.x, u.y, cellX(u.path[1]), cellY(u.path[1]), u.r))) u.path.shift();
+    const cellX = (i) => ((i % GW) + 0.5) / S;
+    const cellY = (i) => (Math.floor(i / GW) + 0.5) / S;
+    while (u.path.length > 1 && (Math.hypot(cellX(u.path[0]) - u.x, cellY(u.path[0]) - u.y) < 0.35 / S
+      || this.clearLine(u.x, u.y, cellX(u.path[1]), cellY(u.path[1]), u.r, who))) u.path.shift();
     if (u.path.length <= 1) {
       this.moveToward(u, tx, ty, speed, stop, dt);
       return true;
