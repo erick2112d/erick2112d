@@ -89,6 +89,7 @@ async function chopUntil(res, amount, timeout = 70000) {
     }, kinds);
     if (!node) { await sleep(500); continue; }
     await walkTo(node.x, node.y, 1.45, 9000);
+    await closeModals(); // по пути герой может подобрать записку — откроется сюжет
     const fr = await ev(() => ({ modal: window.__LL.hud.modal, win: window.__LL.hud.window?.kind || null, t: window.__LL.game.time }));
     if (fr.modal || fr.win) log(`окно мешает добыче: ${JSON.stringify(fr)}`);
     const t1 = Date.now();
@@ -97,7 +98,8 @@ async function chopUntil(res, amount, timeout = 70000) {
       await sleep(100);
     }
   }
-  throw new Error(`не удалось добыть ${res}: ${JSON.stringify((await st()).res)}`);
+  const dbg = await ev(async () => { const L = window.__LL; const g = L.game; const t0 = g.time; await new Promise((r) => setTimeout(r, 1000)); return { flags: L.flags, modal: L.hud.modal, win: L.hud.window, modalHtml: document.querySelector("#modal").innerText.slice(0, 200), wrapHidden: document.querySelector("#modalWrap").className, dt: g.time - t0, hero: { x: g.hero.x, y: g.hero.y, dead: g.hero.dead, target: g.hero.moveTarget }, phase: g.phase }; });
+  throw new Error(`не удалось добыть ${res}: ${JSON.stringify((await st()).res)} ${JSON.stringify(dbg)}`);
 }
 
 // Стройка через меню «Строить»: вкладка → карточка → клик по месту на карте.
@@ -237,6 +239,7 @@ try {
   });
   check(wallSpot, 'место для забора свободно');
   await walkTo(wallSpot.x0 + 2, wallSpot.y - 2.5, 1.5);
+  await closeModals();
   await page.click('[data-action="buildMenu"]');
   await page.click('[data-action="buildTab"][data-tab="defense"]');
   await page.click('[data-action="pickBuild"][data-type="wall"]');

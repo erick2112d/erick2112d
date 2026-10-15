@@ -629,7 +629,8 @@ export class Renderer {
         const info = this.buildingInfo(b);
         const levelBucket = b.type === 'heart' ? Math.min(100, b.level >= 100 ? 100 : b.level >= 50 ? 50 : b.level >= 25 ? 25 : b.level >= 10 ? 10 : 1) : Math.floor(b.level / 5);
         const key = `${b.type}|${levelBucket}|${info.path}|${info.tier}`;
-        drawSprite(ctx, sprite(key, art.bounds, (cx) => art.static(cx, info)));
+        const sp = sprite(key, art.bounds, (cx) => art.static(cx, info));
+        drawSprite(ctx, sp);
         if (art.anim) {
           const extra = { attackAge: g.time - b.workTime, trapAge: g.time - b.workTime };
           if (b.type === 'ballista') {
@@ -640,12 +641,6 @@ export class Renderer {
           }
           art.anim(ctx, info, this.time, extra);
         }
-      }
-      if (hitAge < 0.1) {
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = 'rgba(255,120,120,0.22)';
-        ctx.fillRect(-b.size / 2, -2.5, b.size, 2.5);
-        ctx.globalCompositeOperation = 'source-over';
       }
     }
     ctx.restore();
@@ -1191,6 +1186,34 @@ export class Renderer {
     const g = this.game;
     const t = this.time;
     const seenGroups = new Set();
+    const attacked = new Set();
+    this.attacked = [];
+    // скрещённые мечи над тем, что сейчас бьют: у забора — одна метка на весь цельный отрезок
+    for (const b of g.buildings) {
+      if (b.destroyed) continue;
+      const age = g.time - b.hitTime;
+      if (age > ATTACK_MARK_TIME) continue;
+      const cfg = BUILDINGS[b.type];
+      let x; let y; let key = b.id;
+      if (cfg.wall) {
+        key = 'w' + b.wallGroup;
+        const prev = this.attacked.find((a) => a.key === key);
+        if (prev) { if (age < prev.age) { prev.age = age; prev.x = b.tx + 0.5; prev.y = b.ty - 0.9; } continue; }
+        x = b.tx + 0.5; y = b.ty - 0.9;
+      } else {
+        const c = g.center(b);
+        const tall = { archerTower: 2.6, mageTower: 3.0, frostTower: 2.6, watchTower: 3.1, heart: 3.6, generator: 2.4, arcanum: 3.2, smelter: 2.4, forge: 2.4 }[b.type] || 1.8;
+        x = c.x; y = b.ty + b.size - tall - 0.45;
+      }
+      attacked.add(key);
+      this.attacked.push({ key, x, y, age, heart: b.type === 'heart', id: b.id });
+    }
+    for (const a of this.attacked) {
+      ctx.save();
+      ctx.translate(a.x, a.y);
+      drawClash(ctx, t + a.id * 0.37, a.age, a.heart ? 1.5 : 1.15);
+      ctx.restore();
+    }
     for (const b of g.buildings) {
       const cfg = BUILDINGS[b.type];
       const st = g.statusOf(b);
@@ -1222,6 +1245,7 @@ export class Renderer {
         ctx.fillRect(c.x - w / 2, top + 0.45, w * (b.hp / b.maxHp), 0.08);
       }
       if (!st.bad && !st.evolve) continue;
+      if (attacked.has(b.id)) continue;
       const bob = Math.sin(t * 4 + b.id) * 0.06;
       ctx.save();
       ctx.translate(c.x, top + bob);
@@ -1288,6 +1312,31 @@ export class Renderer {
     const g = this.game;
     if (g.phase !== 'wave') return;
     const m = 24;
+    // атакованные постройки за краем экрана — мечи у края со стрелкой к ним
+    for (const a of this.attacked || []) {
+      const [sx, sy] = this.toScreen(a.x, a.y);
+      if (sx > 0 && sy > 0 && sx < this.w && sy < this.h) continue;
+      const px = clamp(sx, 44, this.w - 44);
+      const py = clamp(sy, 110, this.h - 120);
+      const ang = Math.atan2(sy - py, sx - px);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.save();
+      ctx.rotate(ang);
+      ctx.translate(30, 0);
+      ctx.beginPath();
+      ctx.moveTo(10, 0); ctx.lineTo(-6, -9); ctx.lineTo(-6, 9);
+      ctx.closePath();
+      ctx.fillStyle = a.heart ? '#ffd34d' : '#ff5a4a';
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = OUTLINE;
+      ctx.stroke();
+      ctx.restore();
+      ctx.scale(34, 34);
+      drawClash(ctx, this.time + a.id * 0.37, a.age, a.heart ? 1.2 : 1);
+      ctx.restore();
+    }
     for (const e of g.enemies) {
       if (e.guard) continue;
       const [sx, sy] = this.toScreen(e.x, e.y);
@@ -1311,3 +1360,88 @@ export class Renderer {
 }
 
 function lookIsWorker(u) { return u.kind === 'worker'; }
+
+const ATTACK_MARK_TIME = 1.6;
+
+// Один меч остриём вверх: клинок, дол, гарда, рукоять, навершие.
+function clashSword(ctx, steel) {
+  ctx.beginPath();
+  ctx.moveTo(-0.055, 0.06); ctx.lineTo(-0.055, -0.36); ctx.lineTo(0, -0.47); ctx.lineTo(0.055, -0.36); ctx.lineTo(0.055, 0.06);
+  ctx.closePath();
+  ctx.fillStyle = steel;
+  ctx.fill();
+  ctx.lineWidth = 0.035;
+  ctx.strokeStyle = OUTLINE;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.fillRect(-0.035, -0.34, 0.025, 0.36);
+  ctx.beginPath();
+  ctx.rect(-0.15, 0.05, 0.3, 0.065);
+  ctx.fillStyle = '#f2c14e';
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(-0.035, 0.115, 0.07, 0.14);
+  ctx.fillStyle = '#7a4524';
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0.29, 0.045, 0, Math.PI * 2);
+  ctx.fillStyle = '#f2c14e';
+  ctx.fill();
+  ctx.stroke();
+}
+
+// Анимированная метка «здесь бой»: два меча раз за разом скрещиваются, на ударе — искры и красная вспышка.
+// t — время, age — сколько секунд прошло с последнего удара по постройке (метка гаснет), k — размер.
+function drawClash(ctx, t, age, k = 1.15) {
+  const fade = clamp((ATTACK_MARK_TIME - age) / 0.45, 0, 1);
+  const pop = age < 0.18 ? 1 + 0.35 * (1 - age / 0.18) : 1;
+  const period = 0.55;
+  const ph = (t % period) / period;
+  // замах → удар → отскок
+  const swing = ph < 0.55 ? 1 - easeOutBack(ph / 0.55) * 0.999 : (ph - 0.55) / 0.45;
+  // угол наклона к центру: разведены (V) → скрещены (X) в момент удара
+  const lean = 0.6 - swing * 0.95;
+  const hit = ph >= 0.5 && ph < 0.72 ? 1 - (ph - 0.5) / 0.22 : 0;
+  ctx.globalAlpha *= fade;
+  ctx.scale(k * pop, k * pop);
+  ctx.translate(0, Math.sin(t * 3) * 0.04);
+  // подложка — красное свечение, вспыхивает в момент удара
+  const r = 0.46 + hit * 0.12;
+  ctx.beginPath();
+  ctx.arc(0, 0.0, r, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(200,30,40,${0.35 + hit * 0.35})`;
+  ctx.fill();
+  ctx.lineWidth = 0.05;
+  ctx.strokeStyle = `rgba(255,140,120,${0.5 + hit * 0.5})`;
+  ctx.stroke();
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * 0.18, 0.18);
+    ctx.rotate(-side * lean);
+    clashSword(ctx, side < 0 ? '#e6ebf2' : '#d6dce6');
+    ctx.restore();
+  }
+  if (hit > 0) {
+    // искры в точке встречи клинков
+    ctx.save();
+    ctx.translate(0, -0.1);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + t * 2;
+      const len = 0.12 + (1 - hit) * 0.22;
+      ctx.strokeStyle = i % 2 ? `rgba(255,230,140,${hit})` : `rgba(255,170,80,${hit})`;
+      ctx.lineWidth = 0.035;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * len * 0.35, Math.sin(a) * len * 0.35);
+      ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(255,255,220,${hit})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.06 + hit * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}

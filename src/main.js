@@ -94,6 +94,7 @@ async function boot() {
   window.__LL = {
     get game() { return game; }, renderer, hud, input, BUILDINGS, WORLD,
     setSpeed: (v) => { speed = v; }, save, load: () => platform.load(),
+    get flags() { return { paused, adOpen, speed, frozen: paused || adOpen || !!hud.modal || !!hud.window, hidden: document.hidden }; },
   };
 
   let last = performance.now();
