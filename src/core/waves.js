@@ -1,5 +1,5 @@
 import { createRng } from './rng.js';
-import { WAVES, ENEMIES } from '../config.js';
+import { WAVES, ENEMIES, BOSS_ROTATION } from '../data/index.js';
 
 export const SIDES = ['N', 'E', 'S', 'W'];
 export const SIDE_NAMES = { N: 'север', E: 'восток', S: 'юг', W: 'запад' };
@@ -8,17 +8,13 @@ export const SIDE_VECTORS = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
 // План волны полностью определяется её номером: повтор волны — тот же состав.
 export function generateWave(n, cfg = WAVES, enemies = ENEMIES) {
   const rng = createRng(n * 7919 + 17);
-
   const rule = cfg.kindRules.find((r) => n % r.every === 0);
   const kindId = rule ? rule.kind : 'normal';
   const kind = cfg.kinds[kindId];
 
   let event = null;
   for (const e of cfg.events) {
-    if (n >= e.fromWave && rng.next() < e.chance) {
-      event = e;
-      break;
-    }
+    if (n >= e.fromWave && rng.next() < e.chance) { event = e; break; }
   }
 
   const sideCount = cfg.sides.filter((s) => n >= s.from).pop().count;
@@ -37,11 +33,13 @@ export function generateWave(n, cfg = WAVES, enemies = ENEMIES) {
   while (budget > 0.5 && pool.length) {
     const affordable = pool.filter(([, e]) => e.points <= budget + 0.5);
     if (!affordable.length) break;
-    const total = affordable.reduce((s, [, e]) => s + e.weight, 0);
+    // свежие виды чуть чаще, чтобы их было видно
+    const weightOf = (e) => e.weight * (n - e.fromWave < 3 ? 1.6 : 1);
+    const total = affordable.reduce((s, [, e]) => s + weightOf(e), 0);
     let roll = rng.next() * total;
     let picked = affordable[0];
     for (const p of affordable) {
-      roll -= p[1].weight;
+      roll -= weightOf(p[1]);
       if (roll <= 0) { picked = p; break; }
     }
     counts[picked[0]] = (counts[picked[0]] || 0) + 1;
@@ -56,9 +54,14 @@ export function generateWave(n, cfg = WAVES, enemies = ENEMIES) {
     at: order.length > 1 ? (i / (order.length - 1)) * kind.spawnSeconds + rng.range(-0.3, 0.3) : 0,
     offset: rng.range(-3, 3),
   }));
+  let bossType = null;
+  let bossHp = 1;
   if (boss) {
-    counts[cfg.bossType] = 1;
-    spawns.push({ type: cfg.bossType, side: activeSides[0], at: kind.spawnSeconds * 0.5, offset: 0 });
+    const idx = n / cfg.bossEvery - 1;
+    bossType = BOSS_ROTATION[idx % BOSS_ROTATION.length];
+    bossHp = Math.pow(cfg.bossCycleHp, Math.floor(idx / BOSS_ROTATION.length));
+    counts[bossType] = 1;
+    spawns.push({ type: bossType, side: activeSides[0], at: kind.spawnSeconds * 0.5, offset: 0, boss: true });
   }
   spawns.sort((a, c) => a.at - c.at);
   for (const s of spawns) s.at = Math.max(0, s.at);
@@ -71,6 +74,8 @@ export function generateWave(n, cfg = WAVES, enemies = ENEMIES) {
     kindName: kind.name,
     event,
     boss,
+    bossType,
+    bossHp,
     sides: activeSides,
     counts,
     spawns,
@@ -80,8 +85,8 @@ export function generateWave(n, cfg = WAVES, enemies = ENEMIES) {
     speedMult: event ? event.speed : 1,
     rewards: {
       gold: Math.round((r.gold.base + r.gold.perWave * n) * rewardMult),
+      food: Math.round((r.food.base + r.food.perWave * n) * rewardMult),
       wood: Math.round((r.wood.base + r.wood.perWave * n) * rewardMult),
-      shards: Math.round((r.shards.base + r.shards.perWave * n) * rewardMult),
     },
   };
 }
