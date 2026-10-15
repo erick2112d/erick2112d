@@ -1,5 +1,5 @@
 // Частицы, всплывающие надписи, тряска камеры. Чисто визуальные — на игру не влияют.
-import { OUTLINE } from './art.js';
+import { OUTLINE } from './art/common.js';
 
 export class Fx {
   constructor() {
@@ -46,8 +46,8 @@ export class Fx {
     this.rings.push({ x, y, r, color, life: 0, max: opts.life || 0.4, width: opts.width || 0.12, fill: opts.fill });
   }
 
-  trail(x, y, angle, range, color) {
-    this.trails.push({ x, y, angle, range, color, life: 0, max: 0.22 });
+  trail(x, y, angle, range, color, arc = 2.6, kind = 'slash') {
+    this.trails.push({ x, y, angle, range, color, arc: Math.min(arc || 2.6, Math.PI * 2), kind, life: 0, max: kind === 'smash' ? 0.3 : 0.22 });
   }
 
   update(dt) {
@@ -83,14 +83,31 @@ export class Fx {
       ctx.globalAlpha = 1 - k;
       ctx.strokeStyle = t.color;
       ctx.lineCap = 'round';
-      ctx.lineWidth = 0.22 * (1 - k);
-      ctx.beginPath();
-      const a0 = t.angle - 1.6 + k * 0.6;
-      ctx.arc(0, 0, t.range * (0.75 + k * 0.25), a0, a0 + 2.6);
-      ctx.stroke();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 0.08 * (1 - k);
-      ctx.stroke();
+      if (t.kind === 'thrust') {
+        ctx.lineWidth = 0.28 * (1 - k);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(t.angle) * 0.4, Math.sin(t.angle) * 0.4);
+        ctx.lineTo(Math.cos(t.angle) * t.range, Math.sin(t.angle) * t.range);
+        ctx.stroke();
+      } else {
+        const arc = t.arc >= Math.PI * 2 - 0.01 ? Math.PI * 1.9 : t.arc;
+        const a0 = t.angle - arc / 2 + k * 0.4;
+        ctx.lineWidth = (t.kind === 'smash' ? 0.34 : 0.22) * (1 - k);
+        ctx.beginPath();
+        ctx.arc(0, 0, t.range * (0.75 + k * 0.25), a0, a0 + arc);
+        ctx.stroke();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 0.08 * (1 - k);
+        ctx.stroke();
+        if (t.kind === 'smash' && k < 0.5) {
+          ctx.globalAlpha = (1 - k * 2) * 0.6;
+          ctx.beginPath();
+          ctx.ellipse(Math.cos(t.angle) * t.range * 0.7, Math.sin(t.angle) * t.range * 0.7 + 0.35, 0.6 * (0.5 + k), 0.25 * (0.5 + k), 0, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255,220,140,0.9)';
+          ctx.lineWidth = 0.08;
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
     for (const r of this.rings) {

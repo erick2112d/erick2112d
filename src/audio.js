@@ -134,6 +134,12 @@ export class Audio {
       case 'victory': [523, 659, 784, 1046, 784, 1046].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.14, 0, i * 0.11)); break;
       case 'defeat': [392, 311, 262, 196].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.14, 0, i * 0.2)); break;
       case 'beacon': [262, 392, 523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.5, 'sine', 0.12, 0, i * 0.12)); break;
+      case 'zap': this.hiss(0.12, 0.25 * v, 5000, 1); this.tone(1400, 0.1, 'sawtooth', 0.06 * v, -900); break;
+      case 'ice': this.tone(1800, 0.15, 'sine', 0.1 * v, -600); this.hiss(0.1, 0.12 * v, 6000, 3); break;
+      case 'summon': this.tone(110, 0.6, 'sawtooth', 0.1 * v, 60); this.hiss(0.5, 0.12 * v, 500, 0.5); break;
+      case 'chest': [660, 880, 1100, 1320].forEach((f, i) => this.tone(f, 0.12, 'triangle', 0.12, 0, i * 0.05)); break;
+      case 'page': this.hiss(0.15, 0.15, 2500, 0.8); this.tone(520, 0.2, 'sine', 0.06, 200); break;
+      case 'coin': this.tone(1320, 0.08, 'square', 0.06); this.tone(1760, 0.1, 'square', 0.05, 0, 0.05); break;
       case 'click': this.tone(880, 0.03, 'square', 0.04); break;
       default:
     }

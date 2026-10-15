@@ -29,10 +29,10 @@ export const activitiesMixin = {
     if (h.dead) return;
     // подбор касанием
     for (const c of a.chests) {
-      if (Math.hypot(c.x - h.x, c.y - h.y) < 0.95) { this.openChest(c); break; }
+      if (Math.hypot(c.x - h.x, c.y - h.y) < 1.1) { this.openChest(c); break; }
     }
     for (const n of a.notes) {
-      if (this.inTerritory(n.x, n.y) && Math.hypot(n.x - h.x, n.y - h.y) < 0.95) { this.takeNote(n); break; }
+      if (this.inTerritory(n.x, n.y) && Math.hypot(n.x - h.x, n.y - h.y) < 1.1) { this.takeNote(n); break; }
     }
     for (const s of a.shrines) {
       if (s.readyAt <= this.time && this.inTerritory(s.x, s.y) && Math.hypot(s.x - h.x, s.y - h.y) < 1.1) { this.useShrine(s); break; }

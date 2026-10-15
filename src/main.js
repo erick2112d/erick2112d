@@ -5,7 +5,7 @@ import { Hud } from './ui/hud.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { initPlatform } from './platform.js';
-import { WORLD, BUILDINGS } from './config.js';
+import { WORLD, BUILDINGS } from './data/index.js';
 
 const STEP = 1 / 60;
 
@@ -21,7 +21,6 @@ async function boot() {
     console.warn('Сохранение не загружено, новая игра', e);
     game = new Game();
   }
-  const isNew = !saved;
 
   const renderer = new Renderer(canvas, game);
   let speed = 1;
@@ -34,10 +33,7 @@ async function boot() {
   const save = () => { platform.save(game.serialize()); saveRequested = false; };
 
   const hud = new Hud(document.getElementById('hud'), game, renderer, {
-    startWave: () => {
-      audio.unlock();
-      if (game.startWave()) audio.setTension(true);
-    },
+    startWave: () => { audio.unlock(); if (game.startWave()) audio.setTension(true); },
     rewarded: (onReward) => {
       platform.showRewardedAd({
         onOpen: () => { adOpen = true; audio.suspend('ad'); },
@@ -56,6 +52,13 @@ async function boot() {
         });
       }
     },
+    buyProduct: (id, done) => {
+      adOpen = true;
+      audio.suspend('ad');
+      platform.purchase(id, (pid) => game.grantProduct(pid)).finally(() => { adOpen = false; audio.resume('ad'); save(); done?.(); });
+    },
+    paymentsReady: () => platform.paymentsReady(),
+    productPrice: (id) => platform.price(id),
     newGame: () => {
       platform.clear();
       game = new Game();
@@ -76,12 +79,13 @@ async function boot() {
   window.addEventListener('resize', () => renderer.resize());
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { paused = true; audio.suspend('hidden'); save(); }
-    else { paused = false; audio.resume('hidden'); }
+    if (document.hidden) { paused = true; audio.suspend('hidden'); save(); } else { paused = false; audio.resume('hidden'); }
   });
   window.addEventListener('pagehide', save);
 
-  // События создания мира не нужны; непрочитанные записи сюжета показываем сами.
+  // покупки, которые оплатили, но не успели выдать
+  platform.restorePurchases((pid) => game.grantProduct(pid));
+
   game.drainEvents();
   for (const id of [...game.story.unread]) hud.showStory(id);
 
@@ -94,10 +98,11 @@ async function boot() {
   let last = performance.now();
   let acc = 0;
   let readySent = false;
+  let bestSent = game.stats.bestWave;
   const loop = (now) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    const frozen = paused || adOpen || hud.blocking;
+    const frozen = paused || adOpen || !!hud.modal || !!hud.window;
     platform.setGameplay(!frozen);
     if (!frozen) {
       const mv = input.movement();
@@ -123,6 +128,7 @@ async function boot() {
       hud.consume(events);
       if (events.some((e) => e.type === 'save')) saveRequested = true;
       if (events.some((e) => e.type === 'victory' || e.type === 'defeat')) audio.setTension(false);
+      if (game.stats.bestWave > bestSent) { bestSent = game.stats.bestWave; platform.submitScore(bestSent); }
       saveTimer += dt;
       if (saveRequested && saveTimer > 1) { saveTimer = 0; save(); }
       if (saveTimer > WORLD.autoSaveSeconds) { saveTimer = 0; save(); }

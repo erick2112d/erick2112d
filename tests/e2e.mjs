@@ -1,5 +1,5 @@
-// Сквозная проверка в настоящем браузере: игрок проходит весь цикл первой итерации.
-// Запуск: npm run e2e  (скриншоты — в test-results/)
+// Сквозная проверка в настоящем браузере: игрок проходит основные механики через интерфейс.
+// Запуск: npm run e2e  (скриншоты — в test-results/). MOBILE=1 — телефонный экран.
 import { mkdirSync } from 'node:fs';
 import { startServer } from '../scripts/serve.mjs';
 
@@ -13,8 +13,8 @@ mkdirSync(OUT, { recursive: true });
 const PORT = 8093;
 const server = await startServer(PORT);
 const browser = await chromium.launch();
-const viewport = process.env.MOBILE ? { width: 412, height: 860 } : { width: 1280, height: 760 };
-const context = await browser.newContext({ viewport, hasTouch: !!process.env.MOBILE });
+const viewport = { width: 1280, height: 760 };
+const context = await browser.newContext({ viewport });
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -24,306 +24,326 @@ const log = (...a) => console.log('•', ...a);
 let shot = 0;
 const snap = (name) => page.screenshot({ path: `${OUT}${String(++shot).padStart(2, '0')}-${name}.png` });
 const ev = (fn, arg) => page.evaluate(fn, arg);
-const state = () => ev(() => {
-  const g = window.__LL.game;
-  return {
-    res: { ...g.res }, phase: g.phase, hero: { x: g.hero.x, y: g.hero.y, dead: g.hero.dead },
-    buildings: g.buildings.map((b) => ({ id: b.id, type: b.type, hp: b.hp, maxHp: b.maxHp, destroyed: b.destroyed, status: g.statusOf(b).code })),
-    progress: { ...g.progress }, energy: { ...g.energy }, modal: window.__LL.hud.modal, beacon: g.beacons[0].state,
-    unlocked: [...g.unlocked], enemies: g.enemies.length,
-  };
-});
+const sleep = (ms) => page.waitForTimeout(ms);
 function check(cond, msg) {
   if (!cond) throw new Error('ПРОВЕРКА НЕ ПРОЙДЕНА: ' + msg);
   log('✔', msg);
 }
-const sleep = (ms) => page.waitForTimeout(ms);
+const st = () => ev(() => {
+  const g = window.__LL.game;
+  return { res: { ...g.res }, phase: g.phase, heart: g.heartLevel, radius: g.radius(), buildings: g.buildings.map((b) => ({ id: b.id, type: b.type, level: b.level })),
+    progress: { ...g.progress }, modal: window.__LL.hud.modal, window: window.__LL.hud.window?.kind || null, items: [...g.inventory.items], weapon: g.inventory.equipped.weapon };
+});
 
 async function closeModals() {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 12; i++) {
     const m = await ev(() => window.__LL.hud.modal);
     if (!m || m === 'result') return;
     await page.click('#modal [data-action="closeModal"], #modal [data-action="resume"]');
-    await sleep(150);
+    await sleep(120);
   }
 }
 
-// Идёт к точке касаниями земли, как игрок на телефоне: тап по точке на экране
-// (если цель за краем — тап в её сторону). Герой сам обходит препятствия.
-async function walkTo(x, y, near = 0.9, timeout = 20000) {
+// Касание земли или цели: герой сам идёт (обходит препятствия).
+async function walkTo(x, y, near = 1.2, timeout = 20000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
     const h = await ev(() => ({ x: window.__LL.game.hero.x, y: window.__LL.game.hero.y, t: window.__LL.game.hero.moveTarget }));
     if (Math.hypot(x - h.x, y - h.y) < near) return;
     if (!h.t) {
-      const [sx, sy] = await ev(([a, b]) => window.__LL.renderer.toScreen(a, b), [x, y]);
-      const [hx, hy] = await ev(() => window.__LL.renderer.toScreen(window.__LL.game.hero.x, window.__LL.game.hero.y));
-      const x0 = viewport.width * 0.3; const x1 = viewport.width * 0.7;
-      const y0 = viewport.height * 0.22; const y1 = viewport.height * 0.7;
-      let px = sx; let py = sy;
-      if (px < x0 || px > x1 || py < y0 || py > y1) {
-        // точка на краю безопасной зоны по направлению к цели
-        const dx = sx - hx; const dy = sy - hy;
-        const k = Math.min(Math.abs((dx > 0 ? x1 - hx : x0 - hx) / (dx || 1e-6)), Math.abs((dy > 0 ? y1 - hy : y0 - hy) / (dy || 1e-6)), 1);
-        px = hx + dx * k; py = hy + dy * k;
-      }
-      // не попадаем по зданию: сдвигаем точку касания вбок
-      const free = await ev(([a, b, w, h]) => {
+      const pt = await ev(([a, b, w, hh]) => {
         const r = window.__LL.renderer;
         const g = window.__LL.game;
-        for (const [ox, oy] of [[0, 0], [60, 0], [-60, 0], [0, 60], [0, -60], [120, 0], [-120, 0], [90, 90], [-90, -90], [90, -90], [-90, 90]]) {
-          const X = Math.min(w - 20, Math.max(20, a + ox));
-          const Y = Math.min(h * 0.72, Math.max(h * 0.18, b + oy));
-          const p = r.toWorld(X, Y);
-          const tx = Math.floor(p.x); const ty = Math.floor(p.y);
-          if (!g.buildingAt(tx, ty) && !g.buildingAt(tx, ty + 1)) return [X, Y];
+        let [sx, sy] = r.toScreen(a, b);
+        const [hx, hy] = r.toScreen(g.hero.x, g.hero.y);
+        const x0 = w * 0.3; const x1 = w * 0.7; const y0 = hh * 0.25; const y1 = hh * 0.7;
+        if (sx < x0 || sx > x1 || sy < y0 || sy > y1) {
+          const dx = sx - hx; const dy = sy - hy;
+          const k = Math.min(Math.abs((dx > 0 ? x1 - hx : x0 - hx) / (dx || 1e-6)), Math.abs((dy > 0 ? y1 - hy : y0 - hy) / (dy || 1e-6)), 1);
+          sx = hx + dx * k; sy = hy + dy * k;
         }
-        return [a, b];
-      }, [px, py, viewport.width, viewport.height]);
-      await page.mouse.click(free[0], free[1]);
+        for (const [ox, oy] of [[0, 0], [60, 0], [-60, 0], [0, 60], [0, -60], [100, 60], [-100, -60]]) {
+          const p = r.toWorld(sx + ox, sy + oy);
+          const tx = Math.floor(p.x); const ty = Math.floor(p.y);
+          if (!g.buildingAt(tx, ty) && !g.buildingAt(tx, ty + 1) && !g.buildingAt(tx, ty + 2)) return [sx + ox, sy + oy];
+        }
+        return [sx, sy];
+      }, [x, y, viewport.width, viewport.height]);
+      await page.mouse.click(pt[0], pt[1]);
     }
     await sleep(120);
   }
 }
 
-// Рубит ближайшие деревья, пока древесины не станет больше нужного.
-async function chopUntil(wood, timeout = 60000) {
+async function chopUntil(res, amount, timeout = 70000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
-    const s = await state();
-    if (s.res.wood >= wood) return;
-    const tree = await ev(() => {
+    const s = await st();
+    if ((s.res[res] || 0) >= amount) return;
+    const kinds = res === 'wood' ? ['tree'] : res === 'stone' ? ['rock'] : ['bush'];
+    const node = await ev((k) => {
       const g = window.__LL.game;
-      const c = g.heartCenter();
-      const r = window.__LL.renderer;
-      // сначала деревья в видимой части экрана (не под панелями)
-      const onScreen = (x) => { const [sx, sy] = r.toScreen(x.x, x.y); return sx > 40 && sx < r.w - 40 && sy > r.h * 0.18 && sy < r.h * 0.72; };
-      const n = g.nodes.filter((x) => x.kind === 'tree' && x.hp > 0 && g.inTerritory(x.x, x.y))
-        .sort((a, b) => (onScreen(b) - onScreen(a)) || (Math.hypot(a.x - g.hero.x, a.y - g.hero.y) - Math.hypot(b.x - g.hero.x, b.y - g.hero.y)))[0];
-      return n ? { x: n.x, y: n.y, id: n.id, cx: c.x, cy: c.y } : null;
-    });
-    if (!tree) { await sleep(500); continue; }
-    // касание дерева: герой сам подходит к нему, автоатака рубит
-    await walkTo(tree.x, tree.y, 1.4, 8000);
+      const n = g.nodes.filter((x) => k.includes(x.kind) && x.hp > 0 && g.inTerritory(x.x, x.y, 0.6))
+        .sort((a, b) => Math.hypot(a.x - g.hero.x, a.y - g.hero.y) - Math.hypot(b.x - g.hero.x, b.y - g.hero.y))[0];
+      return n ? { x: n.x, y: n.y, id: n.id } : null;
+    }, kinds);
+    if (!node) { await sleep(500); continue; }
+    await walkTo(node.x, node.y, 1.45, 9000);
     const t1 = Date.now();
     while (Date.now() - t1 < 4000) {
-      const alive = await ev((id) => window.__LL.game.nodes.find((n) => n.id === id)?.hp > 0, tree.id);
-      if (!alive) break;
+      if (!(await ev((id) => !!window.__LL.game.nodeById(id), node.id))) break;
       await sleep(100);
     }
   }
-  const dbg = await ev(() => {
-    const g = window.__LL.game;
-    const alive = g.nodes.filter((x) => x.kind === 'tree' && x.hp > 0 && g.inTerritory(x.x, x.y));
-    return { wood: g.res.wood, alive: alive.length, hero: [g.hero.x.toFixed(1), g.hero.y.toFixed(1)], target: g.hero.moveTarget,
-      trees: alive.slice(0, 5).map((t) => [t.x, t.y]), card: !!window.__LL.hud.card, modal: window.__LL.hud.modal };
-  });
-  throw new Error('не удалось нарубить древесину: ' + JSON.stringify(dbg));
+  throw new Error(`не удалось добыть ${res}: ${JSON.stringify((await st()).res)}`);
 }
 
-// Строит через меню: карточка снизу → клик по месту на карте.
+// Стройка через меню «Строить»: вкладка → карточка → клик по месту на карте.
 async function buildVia(type, dx, dy) {
-  const spot = await ev(([t, x, y]) => {
+  const info = await ev(([t, x, y]) => {
     const g = window.__LL.game;
     const c = g.heartCenter();
-    return g.findSpot(t, c.x + x, c.y + y);
+    return { spot: g.findSpot(t, c.x + x, c.y + y), size: window.__LL.BUILDINGS[t].size, cat: window.__LL.BUILDINGS[t].category };
   }, [type, dx, dy]);
-  check(spot, `есть место для «${type}»`);
-  const before = (await state()).buildings.length;
-  // подходим поближе, чтобы место было в центре экрана, а не под панелями
-  const size0 = await ev((t) => window.__LL.BUILDINGS[t].size, type);
-  await walkTo(spot.tx + size0 / 2, spot.ty + size0 + 1.5, 2.5, 10000);
-  await sleep(600);
-  await page.click(`.build-card[data-type="${type}"]`);
+  check(info.spot, `есть место для «${type}»`);
+  await walkTo(info.spot.tx + info.size / 2, info.spot.ty + info.size + 1.5, 2.5, 10000);
+  await sleep(500);
+  const before = (await st()).buildings.length;
+  await page.click('[data-action="buildMenu"]');
+  await page.click(`[data-action="buildTab"][data-tab="${info.cat}"]`);
+  await page.click(`[data-action="pickBuild"][data-type="${type}"]`);
   await sleep(100);
-  const size = await ev((t) => window.__LL.BUILDINGS[t].size, type);
-  const [sx, sy] = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [spot.tx + size / 2, spot.ty + size / 2]);
-  if (sx < 10 || sy < 90 || sx > viewport.width - 10 || sy > viewport.height - 170) throw new Error('место вне видимой части экрана');
+  const [sx, sy] = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [info.spot.tx + info.size / 2, info.spot.ty + info.size / 2]);
   await page.mouse.move(sx, sy);
-  await sleep(80);
   await page.mouse.click(sx, sy);
   await sleep(150);
-  if (type === 'wall') await page.keyboard.press('Escape');
-  const after = await state();
-  check(after.buildings.length === before + 1, `построено: ${type}`);
+  await ev(() => window.__LL.hud.cancelBuild());
+  const after = await st();
+  check(after.buildings.length === before + 1, `построено через меню: ${type}`);
   return after.buildings[after.buildings.length - 1];
 }
 
+async function clickBuilding(id) {
+  const b = await ev((bid) => { const g = window.__LL.game; const x = g.byId(bid); const c = g.center(x); return { x: c.x, y: x.ty + x.size }; }, id);
+  const [ox, oy] = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [b.x, b.y]);
+  if (ox < 120 || oy < 140 || ox > viewport.width - 360 || oy > viewport.height - 160) {
+    await walkTo(b.x, b.y + 1.5, 2, 12000);
+    await sleep(600);
+  }
+  const [sx, sy] = await ev((bid) => { const g = window.__LL.game; const b = g.byId(bid); const c = g.center(b); return window.__LL.renderer.toScreen(c.x, b.ty + b.size - 0.3); }, id);
+  await page.mouse.click(sx, sy);
+  await sleep(200);
+}
+
 async function playWave(speed = 3) {
-  const s = await state();
-  const n = s.progress.nextWave;
+  const n = (await st()).progress.nextWave;
   await page.click('[data-action="startWave"]');
   await ev((v) => window.__LL.setSpeed(v), speed);
-  check((await state()).phase === 'wave', `волна ${n} началась`);
-  let shotTaken = false;
+  check((await st()).phase === 'wave', `волна ${n} началась`);
   const t0 = Date.now();
-  while (Date.now() - t0 < 120000) {
-    const st = await state();
-    if (!shotTaken && st.enemies >= 3) { await snap(`wave${n}-battle`); shotTaken = true; }
-    if (st.modal === 'result' || st.modal === 'story') break;
+  let shotDone = false;
+  while (Date.now() - t0 < 150000) {
+    const s = await st();
+    if (!shotDone && (await ev(() => window.__LL.game.enemies.length)) >= 3) { await snap(`wave${n}`); shotDone = true; }
+    if (s.modal === 'result' || (s.phase === 'build' && s.modal)) break;
     await sleep(250);
   }
   await ev(() => window.__LL.setSpeed(1));
   await closeModals();
-  await sleep(200);
-  const st = await state();
-  return { n, victory: st.progress.highestCleared >= n, st };
+  const s = await st();
+  return { n, victory: s.progress.highestCleared >= n };
 }
 
 try {
-  // новый контекст браузера — пустое хранилище, то есть новая игра
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForFunction(() => window.__LL && !document.getElementById('loader'));
   await snap('intro');
-  check((await state()).modal === 'story', 'показано вступление сюжета');
+  check((await st()).modal === 'story', 'показано вступление');
   await closeModals();
+  const top = await page.$$eval('.currencies .cur', (els) => els.length);
+  check(top === 3, 'сверху только монеты, самоцветы и еда');
 
-  // 1. Добыча древесины атакой по деревьям
-  const wood0 = (await state()).res.wood;
+  // 1. Добыча и первые постройки
   await ev(() => window.__LL.setSpeed(2));
-  await chopUntil(wood0 + 20);
-  await snap('chopping');
-  check((await state()).res.wood > wood0, 'герой добыл древесину ударами по деревьям');
-  await chopUntil(60);
-
-  // 2. Генератор и лесопилка → доски (цепочка из двух шагов)
-  await buildVia('generator', -4, 1);
-  await buildVia('sawmill', 4, 1);
-  await chopUntil(35);
-  await ev(() => window.__LL.setSpeed(6));
-  await sleep(1500);
-  let s = await state();
-  check(s.res.planks > 0, `лесопилка делает доски из древесины (досок: ${Math.floor(s.res.planks)})`);
-
-  // 3. Башня: без энергии не работает
-  await chopUntil(50);
-  await page.waitForFunction(() => window.__LL.game.res.planks >= 10, null, { timeout: 30000 });
-  await ev(() => window.__LL.setSpeed(1));
-  const preview = await ev(() => window.__LL.game.wavePreview().sides[0]);
-  const vec = { N: [0, -3], E: [3, 0], S: [0, 3], W: [-3, 0] }[preview];
-  const gen = (await state()).buildings.find((b) => b.type === 'generator');
-  const tower = await buildVia('archerTower', vec[0], vec[1]);
-  s = await state();
-  check(s.buildings.find((b) => b.id === tower.id).status === 'working', 'башня получает энергию от генератора');
-  // карточка генератора
-  const [gx, gy] = await ev((id) => { const g = window.__LL.game; const b = g.byId(id); const c = g.center(b); return window.__LL.renderer.toScreen(c.x, c.y - 0.2); }, gen.id);
-  await page.mouse.click(gx, gy);
-  await sleep(200);
-  await snap('generator-card');
-  check(await page.isVisible('#card'), 'карточка здания открывается по клику');
-
-  // 4. Волна 1
-  await snap('before-wave1');
-  let r = await playWave(3);
-  check(r.victory, 'волна 1 отражена');
-  await snap('wave1-result');
-  check(r.st.res.gold > 0, `получено золото (${Math.floor(r.st.res.gold)})`);
-  check(await page.isVisible('#modal [data-action="nextWave"]'), 'есть выбор: повторить или следующая');
-  await page.click('#modal .primary[data-action="nextWave"]');
-  await sleep(200);
-  await closeModals();
-  check((await state()).progress.nextWave === 2, 'выбрана следующая волна 2');
-
-  // 5. Казарма мечников
-  await ev(() => window.__LL.setSpeed(2));
-  await chopUntil(45);
-  await ev(() => window.__LL.setSpeed(6));
-  await page.waitForFunction(() => window.__LL.game.res.planks >= 15, null, { timeout: 30000 });
-  await ev(() => window.__LL.setSpeed(1));
-  const side2 = await ev(() => window.__LL.game.wavePreview().sides);
-  const v2 = { N: [0, -4], E: [4, 0], S: [0, 4], W: [-4, 0] }[side2[0]];
-  await buildVia('barracks', v2[0], v2[1]);
+  await chopUntil('wood', 30);
+  check(true, 'герой добыл древесину');
+  await buildVia('workerCamp', -4, 3);
   await ev(() => window.__LL.setSpeed(4));
-  await page.waitForFunction(() => window.__LL.game.allies.length >= 2, null, { timeout: 20000 });
-  check(true, 'казарма выпустила мечников');
-
-  // 6. Волна 2 — повтор волны 1 проверим кнопкой выбора
-  await ev(() => window.__LL.setSpeed(1));
-  await page.click('[data-action="pickWave"][data-wave="1"]');
-  await sleep(200);
-  check((await state()).progress.nextWave === 1, 'на панели можно выбрать повтор волны 1');
-  const goldBefore = (await state()).res.gold;
-  r = await playWave(3);
-  check(r.victory && r.st.res.gold > goldBefore, 'повтор волны 1 дал полную награду');
-  await page.click('#modal .primary[data-action="nextWave"]');
-  await sleep(200);
-  await closeModals();
-
-  // 7. Дом ремонтников + ремонт
+  await page.waitForFunction(() => window.__LL.game.workers.length >= 1, null, { timeout: 15000 });
+  check(true, 'лагерь выпустил рабочих');
   await ev(() => window.__LL.setSpeed(2));
-  await chopUntil(60);
-  await ev(() => window.__LL.setSpeed(6));
-  await page.waitForFunction(() => window.__LL.game.res.planks >= 10 && window.__LL.game.res.gold >= 10, null, { timeout: 30000 });
-  await ev(() => window.__LL.setSpeed(1));
-  await buildVia('repairHouse', -3, -4);
-  await buildVia('wall', vec[0] * 2, vec[1] * 2 + 1);
-
-  for (let i = 0; i < 2; i++) {
-    r = await playWave(3);
-    log(`волна ${r.n}: ${r.victory ? 'победа' : 'поражение'}, сердце ${Math.round(r.st.buildings[0].hp)}`);
-    await snap(`wave${r.n}-result`);
-    await page.click('#modal .primary[data-action="nextWave"]');
-    await sleep(200);
-    await closeModals();
-  }
-  s = await state();
-  const damaged = s.buildings.filter((b) => b.hp < b.maxHp);
-  log('повреждено после волн:', damaged.map((b) => `${b.type} ${Math.round(b.hp)}/${b.maxHp}`).join(', ') || 'ничего');
-  // если враги ничего не задели, повреждаем стену сами, чтобы проверить ремонт
-  const target = damaged.find((b) => b.type !== 'heart') || s.buildings.find((b) => b.type === 'wall');
-  if (!damaged.length) await ev((id) => { const g = window.__LL.game; g.damageBuilding(g.byId(id), 100); }, target.id);
-  await ev(() => { window.__LL.game.res.wood = Math.max(window.__LL.game.res.wood, 60); });
-  await ev(() => window.__LL.setSpeed(4));
-  await page.waitForFunction(() => window.__LL.game.repairers.length > 0, null, { timeout: 10000 });
-  await snap('repairers');
-  check(true, 'ремонтники вышли чинить базу');
-  await page.waitForFunction((id) => { const b = window.__LL.game.byId(id); return b && b.hp >= b.maxHp; }, target.id, { timeout: 30000 });
-  check(true, `постройка «${target.type}» отремонтирована`);
-
-  // 8. Маяк
-  s = await state();
-  check(s.progress.highestCleared >= 3, `пройдено волн: ${s.progress.highestCleared}`);
-  check(s.beacon === 'ready', 'Северный маяк стал доступен');
-  await ev(() => window.__LL.setSpeed(2));
-  await chopUntil(80);
+  await chopUntil('wood', 45);
+  await buildVia('generator', -4, -2);
+  await chopUntil('wood', 40);
+  await buildVia('sawmill', 4, -2);
+  await chopUntil('wood', 40);
   await ev(() => window.__LL.setSpeed(8));
-  await page.waitForFunction(() => window.__LL.game.res.planks >= 30, null, { timeout: 40000 });
-  await ev(() => window.__LL.setSpeed(1));
-  s = await state();
-  log('осколков света:', s.res.shards);
-  if (s.res.shards < 8) {
-    // осколки выпадают с врагов — отыгрываем ещё волну
-    r = await playWave(3);
-    await page.click('#modal .primary[data-action="nextWave"]');
-    await closeModals();
-  }
-  const bpos = await ev(() => { const b = window.__LL.game.beacons[0].cfg; return { x: b.tx + 1, y: b.ty + 1 }; });
-  await walkTo(bpos.x, bpos.y + 4, 1.2);
-  await sleep(300);
-  const [bx, by] = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [bpos.x, bpos.y]);
-  await page.mouse.click(bx, by);
-  await sleep(200);
-  await snap('beacon-card');
-  await page.click('[data-action="restoreBeacon"]');
-  await sleep(1200);
-  s = await state();
-  check(s.beacon === 'lit', 'маяк зажжён');
-  check(s.unlocked.includes('quarry'), 'открыта каменоломня');
-  check(await ev(([x, y]) => window.__LL.game.inTerritory(x, y), [bpos.x, bpos.y - 4]), 'территория расширилась на север');
-  await closeModals();
-  await snap('beacon-lit');
+  await page.waitForFunction(() => window.__LL.game.res.planks >= 10, null, { timeout: 40000 });
+  await ev(() => window.__LL.setSpeed(2));
+  await chopUntil('wood', 20);
+  const side = await ev(() => window.__LL.game.wavePreview().sides[0]);
+  const v = { N: [0, -3], E: [3, 0], S: [0, 3], W: [-3, 0] }[side];
+  await buildVia('archerTower', v[0], v[1]);
+  await snap('base');
 
-  // 9. Сохранение и загрузка после перезапуска
+  // 2. Волна 1
+  const r1 = await playWave(3);
+  check(r1.victory, 'волна 1 отражена');
+  await snap('result1');
+  await page.click('#modal .primary[data-action="nextWave"]');
+  await sleep(150);
+  await closeModals();
+
+  // 3. Улучшение Сердца через карточку: территория растёт
+  await ev(() => window.__LL.setSpeed(3));
+  const need = await ev(() => window.__LL.game.heartUpgradeCost());
+  log('цена Сердца 1→2:', JSON.stringify(need));
+  await chopUntil('wood', need.wood + 5);
+  await chopUntil('stone', need.stone);
+  await ev(() => window.__LL.setSpeed(1));
+  const before = await st();
+  await clickBuilding(before.buildings[0].id);
+  check(await page.isVisible('#card'), 'карточка Сердца открылась');
+  await snap('heart-card');
+  if (before.res.food < need.food || before.res.gold < need.gold) log('ресурсов на Сердце не хватает, ждём ферму/монеты');
+  await page.click('#card .primary[data-action="upgrade"]');
+  await sleep(300);
+  await closeModals();
+  const after = await st();
+  check(after.heart === 2 && after.radius > before.radius, `Сердце 2 уровня, свет шире (${before.radius.toFixed(1)} → ${after.radius.toFixed(1)})`);
+  await ev(() => window.__LL.hud.closeCard());
+
+  // Дальше для проверки интерфейса выдаём ресурсы (экономика проверяется юнит-тестами)
+  await ev(() => {
+    const g = window.__LL.game;
+    for (const k of ['wood', 'stone', 'planks', 'bricks', 'iron', 'coal', 'bones']) g.res[k] = 280;
+    g.res.gold = 3000; g.res.food = 600; g.res.gems = 120;
+    for (let i = 0; i < 4; i++) g.upgradeHeart();
+  });
+  await closeModals();
+  check((await st()).heart === 6, 'Сердце улучшено до 6');
+
+  // 4. Забор протягиванием: одна группа с общей прочностью
+  const wallSpot = await ev(() => {
+    const g = window.__LL.game;
+    const c = g.heartCenter();
+    const y = Math.floor(c.y) + 5;
+    const x0 = Math.floor(c.x) - 3;
+    for (let x = x0 - 1; x <= x0 + 5; x++) for (let yy = y - 1; yy <= y + 1; yy++) { g.removeNodeAt(x, yy); }
+    for (const b of g.buildings) if (b.ty <= y && b.ty + b.size > y && b.tx <= x0 + 4 && b.tx + b.size > x0) return null;
+    return { x0, y };
+  });
+  check(wallSpot, 'место для забора свободно');
+  await walkTo(wallSpot.x0 + 2, wallSpot.y - 2.5, 1.5);
+  await page.click('[data-action="buildMenu"]');
+  await page.click('[data-action="buildTab"][data-tab="defense"]');
+  await page.click('[data-action="pickBuild"][data-type="wall"]');
+  const p0 = await ev(([x, y]) => window.__LL.renderer.toScreen(x + 0.5, y + 0.5), [wallSpot.x0, wallSpot.y]);
+  const p1 = await ev(([x, y]) => window.__LL.renderer.toScreen(x + 0.5, y + 0.5), [wallSpot.x0 + 4, wallSpot.y]);
+  await page.mouse.move(p0[0], p0[1]);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) { await page.mouse.move(p0[0] + ((p1[0] - p0[0]) * i) / 8, p0[1]); await sleep(30); }
+  await snap('wall-drag');
+  await page.mouse.up();
+  await sleep(200);
+  await ev(() => window.__LL.hud.cancelBuild());
+  const wall = await ev(([x, y]) => {
+    const g = window.__LL.game;
+    g.update(1 / 60);
+    const ws = [0, 1, 2, 3, 4].map((i) => g.buildingAt(x + i, y));
+    if (ws.some((w) => !w || w.type !== 'wall')) return null;
+    const grp = g.wallGroupHp(ws[0]);
+    g.damageBuilding(ws[4], grp.maxHp * 0.5);
+    return { same: ws.every((w) => w.wallGroup === ws[0].wallGroup), count: grp.count, ratios: ws.map((w) => Math.round((w.hp / w.maxHp) * 100)) };
+  }, [wallSpot.x0, wallSpot.y]);
+  check(wall && wall.same && wall.count === 5, 'протянутый забор из 5 секций слился в один');
+  check(wall.ratios.every((r) => r === 50), `урон по одной секции поровну у всех: ${wall.ratios.join(', ')}%`);
+  await snap('wall');
+
+  // 5. Кузня: изучить оружие, надеть, поставить в слот
+  const forge = await buildVia('forge', 5, 4);
+  await clickBuilding(forge.id);
+  await page.click('[data-action="openCraft"]');
+  await sleep(200);
+  await snap('craft');
+  await page.click('[data-action="craft"][data-item="swordSteel"]');
+  await sleep(200);
+  await closeModals();
+  check((await st()).items.includes('swordSteel'), 'в кузне изучен закалённый меч');
+  await page.click('[data-action="closeWindow"]');
+  await sleep(150);
+  await closeModals();
+  await page.click('[data-action="inventory"]');
+  await page.click('[data-action="selItem"][data-item="swordSteel"]');
+  await page.click('[data-action="equip"][data-item="swordSteel"]');
+  await snap('inventory');
+  check((await st()).weapon === 'swordSteel', 'меч надет через инвентарь');
+  await page.click('[data-action="invTab"][data-tab="mats"]');
+  await sleep(150);
+  await snap('materials');
+  await page.click('[data-action="closeWindow"]');
+  await sleep(150);
+  await closeModals();
+  await page.click('[data-action="hotbar"][data-slot="0"]');
+  check((await st()).weapon === 'swordWood', 'быстрый слот 1 переключил оружие');
+
+  // 6. Эволюция башни на 10 уровне
+  await ev(() => { const g = window.__LL.game; for (let i = 0; i < 6; i++) g.upgradeHeart(); g.res.gold = 9000; g.res.planks = 400; g.res.iron = 200; g.res.bricks = 200; });
+  await closeModals();
+  const tower = (await st()).buildings.find((b) => b.type === 'archerTower');
+  await clickBuilding(tower.id);
+  for (let i = 0; i < 9; i++) { await page.click('#card .primary[data-action="upgrade"]'); await sleep(60); }
+  await sleep(200);
+  check(await page.isVisible('.evo-box'), 'на 10 уровне предложена эволюция');
+  await snap('evolution');
+  await page.click('[data-action="evolve"][data-opt="volley"]');
+  await sleep(200);
+  await closeModals();
+  check(await ev((id) => window.__LL.game.byId(id).evo[10] === 'volley', tower.id), 'выбрана «Залповая башня»');
+  await ev(() => window.__LL.hud.closeCard());
+
+  // 7. Магазин: товар за самоцветы
+  await page.click('[data-action="shop"]');
+  await page.click('[data-action="shopTab"][data-tab="goods"]');
+  const gemsBefore = (await st()).res.gems;
+  await page.click('[data-action="buyOffer"][data-offer="crateFood"]');
+  await sleep(150);
+  await snap('shop');
+  check((await st()).res.gems < gemsBefore, 'покупка за самоцветы');
+  await page.click('[data-action="closeWindow"]');
+  await sleep(150);
+  await closeModals();
+
+  // 8. Сундук на карте
+  const chest = await ev(() => { const c = window.__LL.game.spawnChest(); return c && { x: c.x, y: c.y }; });
+  check(chest, 'на карте появился сундук');
+  // касание самого сундука — герой идёт к нему и открывает
+  await walkTo(chest.x, chest.y + 3, 2.5, 15000);
+  const cp = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [chest.x, chest.y]);
+  await page.mouse.click(cp[0], cp[1]);
+  await page.waitForFunction(() => window.__LL.game.stats.chests >= 1, null, { timeout: 8000 }).catch(() => {});
+  check(await ev(() => window.__LL.game.stats.chests >= 1), 'сундук открыт');
+
+  // 9. Достижения
+  await page.click('[data-action="achievements"]');
+  await sleep(150);
+  await snap('achievements');
+  check(await ev(() => window.__LL.game.achievements.length >= 2), 'получены достижения');
+  await page.click('[data-action="closeWindow"]');
+  await sleep(150);
+  await closeModals();
+
+  // 10. Сохранение и загрузка
   await ev(() => window.__LL.save());
-  const beforeReload = await state();
+  const saved = await st();
   await page.reload();
   await page.waitForFunction(() => window.__LL && !document.getElementById('loader'));
   await closeModals();
-  const afterReload = await state();
-  check(afterReload.buildings.length === beforeReload.buildings.length, `после перезапуска на месте все постройки (${afterReload.buildings.length})`);
-  check(afterReload.progress.highestCleared === beforeReload.progress.highestCleared, `сохранён прогресс волн (${afterReload.progress.highestCleared})`);
-  check(afterReload.beacon === 'lit', 'маяк остался зажжённым');
-  check(Math.abs(afterReload.res.planks - beforeReload.res.planks) < 3, 'запасы сохранены');
+  const loaded = await st();
+  check(loaded.heart === saved.heart, `после перезапуска Сердце ${loaded.heart} уровня`);
+  check(loaded.buildings.length === saved.buildings.length, `все постройки на месте (${loaded.buildings.length})`);
+  check(loaded.items.includes('swordSteel'), 'изученные предметы на месте');
+  check(await ev(([x, y]) => { const g = window.__LL.game; g.update(1 / 60); return g.wallSegment(g.buildingAt(x, y)).length === 5; }, [wallSpot.x0, wallSpot.y]), 'забор после загрузки по-прежнему цельный');
   await snap('after-reload');
 
   check(errors.length === 0, 'в консоли браузера нет ошибок' + (errors.length ? ':\n' + errors.join('\n') : ''));

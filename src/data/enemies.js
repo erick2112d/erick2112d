@@ -19,7 +19,7 @@ export const ENEMIES = {
     desc: 'Бывший страж маяков в ржавых латах.',
   },
   archer: {
-    name: 'Скелет-лучник', look: 'archer', hp: 24, speed: 1.6, damage: 7, cooldown: 1.6, range: 4.5, radius: 0.33,
+    name: 'Скелет-лучник', look: 'skelArcher', hp: 24, speed: 1.6, damage: 7, cooldown: 1.6, range: 4.5, radius: 0.33,
     armor: 0, points: 2, fromWave: 5, weight: 4, gold: 4, drops: { bones: [1, 0.8] }, aggro: 5, ranged: true, projectileSpeed: 11,
     desc: 'Стреляет костяными стрелами из-за спин.',
   },

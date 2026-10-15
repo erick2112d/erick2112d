@@ -1,5 +1,5 @@
 // Клавиатура, мышь и касания → команды игры.
-import { BUILDINGS } from './config.js';
+import { BUILDINGS } from './data/index.js';
 
 export class Input {
   constructor(canvas, hud, renderer, getGame) {
@@ -8,8 +8,8 @@ export class Input {
     this.renderer = renderer;
     this.getGame = getGame;
     this.keys = new Set();
-    this.joy = null;         // { id, x0, y0, x, y }
-    this.mouse = null;       // экранные координаты
+    this.joy = null;
+    this.mouse = null;
     this.pointerDown = null;
     this.stick = document.getElementById('stick');
     this.joyEl = document.getElementById('joystick');
@@ -21,29 +21,31 @@ export class Input {
     window.addEventListener('pointermove', (e) => this.onMove(e));
     window.addEventListener('pointerup', (e) => this.onUp(e));
     window.addEventListener('pointercancel', (e) => this.onUp(e));
-    canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.hud.action('cancelBuild', {}); });
+    canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.hud.cancelBuild(); });
   }
 
   onKey(e, down) {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     const k = e.code;
     if (down) this.keys.add(k); else this.keys.delete(k);
+    const g = this.getGame();
     if (!down) {
-      if (k === 'Space') this.getGame().hero.attackHeld = false;
+      if (k === 'Space') g.hero.attackHeld = false;
       return;
     }
-    const g = this.getGame();
     if (k === 'Escape') {
       if (this.hud.modal) this.hud.closeModal();
-      else if (this.hud.buildType) this.hud.action('cancelBuild', {});
+      else if (this.hud.window) this.hud.closeWindow();
+      else if (this.hud.buildType) this.hud.cancelBuild();
       else if (this.hud.card) this.hud.closeCard();
       else this.hud.openMenu();
+      return;
     }
+    if (k === 'KeyI' && !this.hud.modal) { if (this.hud.window?.kind === 'inventory') this.hud.closeWindow(); else this.hud.openInventory(); return; }
+    if (k === 'KeyB' && !this.hud.modal) { if (this.hud.window?.kind === 'build') this.hud.closeWindow(); else this.hud.openBuildMenu(); return; }
     if (this.hud.blocking) return;
-    if (k === 'Digit1') this.hud.action('weapon', { weapon: 'staff' });
-    if (k === 'Digit2') this.hud.action('weapon', { weapon: 'sword' });
-    if (k === 'Digit3') this.hud.action('weapon', { weapon: 'bow' });
-    if (k === 'KeyQ') this.hud.action('auto', {});
+    if (k === 'Digit1' || k === 'Digit2' || k === 'Digit3') { g.useHotbar(Number(k.slice(-1)) - 1); this.hud.renderHotbar(); }
+    if (k === 'KeyQ') { g.toggleAuto(); this.hud.renderHotbar(); }
     if (k === 'Space') {
       e.preventDefault();
       this.attackToward(this.mouse ? this.renderer.toWorld(this.mouse.x, this.mouse.y) : null);
@@ -63,28 +65,38 @@ export class Input {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
+  cellAt(p) {
+    const type = this.hud.buildType;
+    const size = BUILDINGS[type].size;
+    const w = this.renderer.toWorld(p.x, p.y);
+    return { tx: Math.round(w.x - size / 2), ty: Math.round(w.y - size / 2) };
+  }
+
   onDown(e) {
     if (this.hud.blocking) return;
     const p = this.local(e);
     const g = this.getGame();
     const isTouch = e.pointerType === 'touch';
-    // джойстик: касание в левой нижней части экрана
-    if (isTouch && !this.hud.buildType && p.x < this.renderer.w * 0.4 && p.y > this.renderer.h * 0.45 && !this.joy) {
+    if (isTouch && !this.hud.buildType && p.x < this.renderer.w * 0.4 && p.y > this.renderer.h * 0.5 && !this.joy) {
       this.joy = { id: e.pointerId, x0: p.x, y0: p.y, x: p.x, y: p.y };
       this.joyEl.style.left = `${p.x}px`;
       this.joyEl.style.top = `${p.y}px`;
       this.joyEl.classList.remove('hidden');
       this.stick.style.transform = 'translate(-50%, -50%)';
-      this.getGame().hero.moveTarget = null;
+      g.hero.moveTarget = null;
       return;
     }
     this.mouse = p;
     this.pointerDown = { id: e.pointerId, x: p.x, y: p.y, t: performance.now() };
-    const w = this.renderer.toWorld(p.x, p.y);
     if (this.hud.buildType) {
       this.updateGhost(p);
+      if (BUILDINGS[this.hud.buildType].wall) {
+        const c = this.cellAt(p);
+        this.renderer.wallDrag = { x0: c.tx, y0: c.ty };
+      }
       return;
     }
+    const w = this.renderer.toWorld(p.x, p.y);
     if (!g.settings.auto && !this.hitSomething(w)) {
       this.attackToward(w);
       g.hero.attackHeld = true;
@@ -99,8 +111,7 @@ export class Input {
       const dx = p.x - this.joy.x0;
       const dy = p.y - this.joy.y0;
       const d = Math.hypot(dx, dy);
-      const max = 46;
-      const k = d > max ? max / d : 1;
+      const k = d > 46 ? 46 / d : 1;
       this.stick.style.transform = `translate(calc(-50% + ${dx * k}px), calc(-50% + ${dy * k}px))`;
       return;
     }
@@ -123,30 +134,47 @@ export class Input {
     const down = this.pointerDown;
     this.pointerDown = null;
     g.hero.attackHeld = false;
-    if (!down || down.id !== e.pointerId || this.hud.blocking) return;
+    if (!down || down.id !== e.pointerId || this.hud.blocking) { this.renderer.wallDrag = null; return; }
     const p = this.local(e);
-    const moved = Math.hypot(p.x - down.x, p.y - down.y);
-    if (moved > 18) return;
-    const w = this.renderer.toWorld(p.x, p.y);
-    if (this.hud.buildType) {
+    const type = this.hud.buildType;
+    if (type) {
       this.updateGhost(p);
       const gh = this.renderer.ghost;
-      const type = this.hud.buildType;
-      if (gh && g.build(type, gh.tx, gh.ty)) {
-        if (type !== 'wall' || !g.canAfford(BUILDINGS.wall.cost)) this.hud.action('cancelBuild', {});
+      const drag = this.renderer.wallDrag;
+      this.renderer.wallDrag = null;
+      if (!gh) return;
+      if (drag && (drag.x0 !== gh.tx || drag.y0 !== gh.ty)) {
+        g.buildLine(type, drag.x0, drag.y0, gh.tx, gh.ty);
+        return;
       }
+      const b = g.build(type, gh.tx, gh.ty, { useGems: this.hud.buildGems });
+      if (b && (!BUILDINGS[type].wall || this.hud.buildGems)) this.hud.cancelBuild();
       return;
     }
+    if (Math.hypot(p.x - down.x, p.y - down.y) > 18) return;
+    const w = this.renderer.toWorld(p.x, p.y);
     const tx = Math.floor(w.x);
     const ty = Math.floor(w.y);
+    // сундуки, записки и святилища важнее зданий за ними
+    const a = g.activities;
+    const pick = [...a.chests, ...a.notes, ...a.shrines].find((o) => Math.hypot(o.x - w.x, o.y - 0.3 - w.y) < 0.75 && g.inTerritory(o.x, o.y));
+    if (pick) {
+      if (this.hud.card) this.hud.closeCard();
+      g.hero.moveTarget = { x: pick.x, y: pick.y };
+      this.renderer.fx.ring(pick.x, pick.y, 0.8, 'rgba(255,224,138,0.9)', { life: 0.35 });
+      return;
+    }
     // постройка; дерево/камень; высокая постройка — по клику чуть выше основания
     const node = g.nodeAt(tx, ty);
-    const b = g.buildingAt(tx, ty) || (!node && g.buildingAt(tx, ty + 1));
+    const b = g.buildingAt(tx, ty) || (!node && (g.buildingAt(tx, ty + 1) || g.buildingAt(tx, ty + 2)));
     if (b) { this.hud.selectBuilding(b.id); return; }
-    const bc = g.beacons.find((x) => x.state !== 'lit' && w.x >= x.cfg.tx - 0.3 && w.x <= x.cfg.tx + 2.3 && w.y >= x.cfg.ty - 2.5 && w.y <= x.cfg.ty + 2.2);
-    if (bc && (bc.state === 'ready' || g.inTerritory(w.x, w.y + 3))) { this.hud.selectBeacon(bc.id); return; }
+    const m = g.activities.merchant;
+    if (m && Math.abs(w.x - m.x) < 1 && w.y > m.y - 2 && w.y < m.y + 0.6) {
+      if (Math.hypot(g.hero.x - m.x, g.hero.y - m.y) < 4) this.hud.openMerchant();
+      else g.hero.moveTarget = { x: m.x, y: m.y + 0.9 };
+      return;
+    }
     if (this.hud.card) this.hud.closeCard();
-    // в авто-режиме касание земли ведёт героя к точке
     if (g.settings.auto) {
       g.hero.moveTarget = { x: w.x, y: w.y };
       this.renderer.fx.ring(w.x, w.y, 0.8, 'rgba(255,224,138,0.9)', { life: 0.35 });
@@ -163,15 +191,11 @@ export class Input {
   updateGhost(p) {
     const g = this.getGame();
     const type = this.hud.buildType;
-    const size = BUILDINGS[type].size;
-    const w = this.renderer.toWorld(p.x, p.y);
-    const tx = Math.round(w.x - size / 2);
-    const ty = Math.round(w.y - size / 2);
+    const { tx, ty } = this.cellAt(p);
     const check = g.canPlace(type, tx, ty);
-    this.renderer.ghost = { type, tx, ty, ok: check.ok, reason: check.reason };
+    this.renderer.ghost = { type, tx, ty, ok: check.ok || (check.noMoney && this.hud.buildGems), reason: check.reason };
   }
 
-  // Вектор движения героя за этот кадр.
   movement() {
     const k = this.keys;
     let x = 0;

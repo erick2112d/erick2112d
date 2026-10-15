@@ -1,21 +1,27 @@
-// Обёртка над Yandex Games SDK. Вне Яндекса работает заглушка: сохранения в localStorage,
-// реклама за награду имитируется коротким окном.
-const LOCAL_KEY = 'lastlight.save.v1';
+// Обёртка над Yandex Games SDK: загрузка, разметка геймплея, реклама, покупки, облачные сохранения, рекорды.
+// Вне Яндекса работает заглушка: сохранения в localStorage, реклама за награду имитируется,
+// покупки недоступны (для проверки — параметр ?testpay в адресе).
+const LOCAL_KEY = 'lastlight.save.v2';
+const LEADERBOARD = 'waves';
 
 export async function initPlatform() {
   const sdk = await loadYandexSdk();
   let ysdk = null;
   let player = null;
+  let payments = null;
   if (sdk) {
     try {
       ysdk = await sdk.init();
       player = await ysdk.getPlayer({ scopes: false }).catch(() => null);
+      payments = await ysdk.getPayments({ signed: false }).catch(() => null);
     } catch (e) {
       console.warn('Yandex SDK init failed', e);
       ysdk = null;
     }
   }
-  return new Platform(ysdk, player);
+  const p = new Platform(ysdk, player, payments);
+  await p.loadCatalog();
+  return p;
 }
 
 function loadYandexSdk() {
@@ -35,11 +41,14 @@ function loadYandexSdk() {
 }
 
 class Platform {
-  constructor(ysdk, player) {
+  constructor(ysdk, player, payments) {
     this.ysdk = ysdk;
     this.player = player;
+    this.payments = payments;
     this.isYandex = !!ysdk;
     this.gameplayOn = false;
+    this.catalog = {};
+    this.testPay = new URLSearchParams(location.search).has('testpay');
     this.lang = ysdk?.environment?.i18n?.lang || 'ru';
   }
 
@@ -47,7 +56,6 @@ class Platform {
     try { this.ysdk?.features?.LoadingAPI?.ready(); } catch { /* нет API */ }
   }
 
-  // Разметка игрового процесса для Яндекса (пауза/игра).
   setGameplay(on) {
     if (on === this.gameplayOn) return;
     this.gameplayOn = on;
@@ -57,15 +65,14 @@ class Platform {
     } catch { /* нет API */ }
   }
 
+  // ---------- сохранения ----------
+
   async load() {
     let local = null;
     try { local = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null'); } catch { local = null; }
     let cloud = null;
     if (this.player) {
-      try {
-        const d = await this.player.getData(['save']);
-        cloud = d?.save || null;
-      } catch { cloud = null; }
+      try { cloud = (await this.player.getData(['save']))?.save || null; } catch { cloud = null; }
     }
     if (local && cloud) return (cloud.savedAt || 0) > (local.savedAt || 0) ? cloud : local;
     return cloud || local;
@@ -82,20 +89,15 @@ class Platform {
     if (this.player) this.player.setData({ save: null }, true).catch(() => {});
   }
 
+  // ---------- реклама ----------
+
   showFullscreenAd({ onOpen, onClose }) {
     if (!this.ysdk) { onClose?.(); return; }
-    this.ysdk.adv.showFullscreenAdv({
-      callbacks: {
-        onOpen: () => onOpen?.(),
-        onClose: () => onClose?.(),
-        onError: () => onClose?.(),
-      },
-    });
+    this.ysdk.adv.showFullscreenAdv({ callbacks: { onOpen: () => onOpen?.(), onClose: () => onClose?.(), onError: () => onClose?.() } });
   }
 
   showRewardedAd({ onOpen, onRewarded, onClose }) {
     if (!this.ysdk) {
-      // заглушка для локальной проверки
       onOpen?.();
       const el = document.createElement('div');
       el.className = 'fake-ad';
@@ -105,12 +107,56 @@ class Platform {
       return;
     }
     this.ysdk.adv.showRewardedVideo({
-      callbacks: {
-        onOpen: () => onOpen?.(),
-        onRewarded: () => onRewarded?.(),
-        onClose: () => onClose?.(),
-        onError: () => onClose?.(),
-      },
+      callbacks: { onOpen: () => onOpen?.(), onRewarded: () => onRewarded?.(), onClose: () => onClose?.(), onError: () => onClose?.() },
     });
+  }
+
+  // ---------- покупки ----------
+
+  paymentsReady() { return !!this.payments || this.testPay; }
+
+  async loadCatalog() {
+    if (!this.payments) return;
+    try {
+      const list = await this.payments.getCatalog();
+      for (const p of list) this.catalog[p.id] = p.price || `${p.priceValue} ${p.priceCurrencyCode}`;
+    } catch { /* каталог не настроен */ }
+  }
+
+  price(id) { return this.catalog[id] || null; }
+
+  // onGrant(productId) вызывается после оплаты; затем покупка подтверждается (consume).
+  async purchase(id, onGrant) {
+    if (this.testPay && !this.payments) { onGrant(id); return true; }
+    if (!this.payments) return false;
+    try {
+      const p = await this.payments.purchase({ id });
+      onGrant(id);
+      await this.payments.consumePurchase(p.purchaseToken).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Покупки, оплаченные, но не выданные (например, закрыли вкладку).
+  async restorePurchases(onGrant) {
+    if (!this.payments) return;
+    try {
+      const list = await this.payments.getPurchases();
+      for (const p of list) {
+        onGrant(p.productID);
+        await this.payments.consumePurchase(p.purchaseToken).catch(() => {});
+      }
+    } catch { /* нет покупок */ }
+  }
+
+  // ---------- рекорды ----------
+
+  async submitScore(value) {
+    try {
+      if (this.ysdk?.leaderboards?.setScore) await this.ysdk.leaderboards.setScore(LEADERBOARD, value);
+      else if (this.ysdk?.getLeaderboards) (await this.ysdk.getLeaderboards()).setLeaderboardScore(LEADERBOARD, value);
+    } catch { /* таблица не настроена */ }
   }
 }
