@@ -44,6 +44,8 @@ jobs:
           LL_KEYSTORE_PASSWORD: ${{ secrets.LL_KEYSTORE_PASSWORD }}
           LL_VERSION_CODE: ${{ github.run_number }}
           LL_VERSION_NAME: 0.3.${{ github.run_number }}
+          # ID приложения в консоли RuStore: Settings → Secrets and variables → Actions → Variables
+          RUSTORE_APP_ID: ${{ vars.RUSTORE_APP_ID }}
         run: |
           chmod +x gradlew
           if [ -n "$LL_KEYSTORE_PATH" ]; then

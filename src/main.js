@@ -103,6 +103,7 @@ async function boot() {
   window.addEventListener('pagehide', save);
 
   // покупки, которые оплатили, но не успели выдать
+  platform.flush = save;
   platform.restorePurchases((pid) => game.grantProduct(pid));
 
   game.drainEvents();

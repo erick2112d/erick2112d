@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
 }
 
 // Подпись релиза берётся из переменных окружения (секреты GitHub) — в репозитории ключа нет.
@@ -16,6 +17,8 @@ android {
         targetSdk 35
         versionCode Integer.parseInt(System.getenv('LL_VERSION_CODE') ?: '1')
         versionName System.getenv('LL_VERSION_NAME') ?: '0.3.0'
+        // ID приложения в консоли RuStore (цифры из адреса console.rustore.ru/apps/<ID>/...) — включает платежи
+        resValue 'string', 'rustore_console_app_id', (System.getenv('RUSTORE_APP_ID') ?: '').trim()
     }
 
     signingConfigs {
@@ -40,10 +43,19 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        resValues true
+    }
 }
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
+    implementation 'ru.rustore.sdk:pay:10.3.0'   // платежи RuStore (Pay SDK)
 }
 
 // Перед сборкой кладём в приложение свежую однофайловую версию игры (npm run single → dist/last-light.html).

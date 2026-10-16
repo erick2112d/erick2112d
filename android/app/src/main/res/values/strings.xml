@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Последний Светоч</string>
+    <string name="rustore_pay_scheme" translatable="false">lastlightpay</string>
 </resources>

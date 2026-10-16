@@ -991,7 +991,9 @@ export class Hud {
       const art = { gems_small: uiIcon('shop', 72), gems_medium: uiIcon('gemPile', 72), gems_large: uiIcon('gemChest', 72) };
       const app = this.hooks.isApp?.() && !this.hooks.paymentsReady();
       const ads = this.hooks.adsAvailable?.() !== false;
-      const products = app ? '' : PRODUCTS.filter((p) => !(p.once && g.shop.starterBought)).map((p) => `<div class="shop-card ${p.once ? 'special' : ''}">
+      // в приложении — только товары, заведённые в консоли RuStore (у них есть цена)
+      const inApp = this.hooks.isApp?.();
+      const products = app ? '' : PRODUCTS.filter((p) => !(p.once && g.shop.starterBought) && (!inApp || this.hooks.productPrice(p.id))).map((p) => `<div class="shop-card ${p.once ? 'special' : ''}">
           ${p.bonus ? `<span class="ribbon-tag">${p.bonus}</span>` : ''}${p.once ? '<span class="ribbon-tag hot">Один раз</span>' : ''}
           <div class="shop-name">${esc(p.name)}</div>
           <div class="shop-art"><img src="${p.item ? itemIcon(p.item) : art[p.id] || uiIcon('shop', 72)}" alt=""></div>

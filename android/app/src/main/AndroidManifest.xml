@@ -9,6 +9,14 @@
         android:hardwareAccelerated="true"
         android:theme="@style/AppTheme">
 
+        <!-- Платежи RuStore: ID приложения из консоли (задаётся при сборке) и схема возврата из банка -->
+        <meta-data
+            android:name="console_app_id_value"
+            android:value="@string/rustore_console_app_id" />
+        <meta-data
+            android:name="sdk_pay_scheme_value"
+            android:value="@string/rustore_pay_scheme" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -19,6 +27,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- возврат в игру после оплаты через СБП, SberPay и банковские приложения -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lastlightpay" />
             </intent-filter>
         </activity>
     </application>

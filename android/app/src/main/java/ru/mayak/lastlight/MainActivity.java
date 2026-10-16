@@ -28,6 +28,7 @@ import androidx.webkit.WebViewAssetLoader;
 public class MainActivity extends Activity {
     private static final String GAME_URL = "https://appassets.androidplatform.net/assets/index.html";
     private WebView web;
+    private RuStorePay pay;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -79,10 +80,23 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+        pay = new RuStorePay(this, code -> {
+            js(code);
+            return kotlin.Unit.INSTANCE;
+        });
         web.addJavascriptInterface(new Bridge(), "LLAndroid");
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
-        else web.loadUrl(GAME_URL);
+        else {
+            web.loadUrl(GAME_URL);
+            pay.onIntent(getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (pay != null) pay.onIntent(intent);
     }
 
     /** Методы, доступные игре как window.LLAndroid. */
@@ -95,6 +109,33 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String platform() {
             return "rustore";
+        }
+
+        // ---- платежи RuStore (ответы приходят в window.__LL_pay) ----
+
+        @JavascriptInterface
+        public boolean payConfigured() {
+            return pay != null && pay.getConfigured();
+        }
+
+        @JavascriptInterface
+        public void payInit(String idsCsv) {
+            runOnUiThread(() -> pay.init(java.util.Arrays.asList(idsCsv.split(","))));
+        }
+
+        @JavascriptInterface
+        public void payBuy(String productId) {
+            runOnUiThread(() -> pay.buy(productId));
+        }
+
+        @JavascriptInterface
+        public void payRestore() {
+            runOnUiThread(() -> pay.restore());
+        }
+
+        @JavascriptInterface
+        public void payConfirm(String purchaseId) {
+            runOnUiThread(() -> pay.confirm(purchaseId));
         }
     }
 

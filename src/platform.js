@@ -1,8 +1,11 @@
 // Обёртка над Yandex Games SDK: загрузка, разметка геймплея, реклама, покупки, облачные сохранения, рекорды.
 // Вне Яндекса работает заглушка: сохранения в localStorage, реклама за награду имитируется,
 // покупки недоступны (для проверки — параметр ?testpay в адресе).
+// В Android-приложении (RuStore) покупки идут через платежи RuStore — мост window.LLAndroid.pay*.
+import { PRODUCTS } from './data/index.js';
 const LOCAL_KEY = 'lastlight.save.v2';
 const LEADERBOARD = 'waves';
+const GRANTED_KEY = 'lastlight.granted.v1'; // выданные покупки RuStore — чтобы не выдать одну дважды
 
 export async function initPlatform() {
   const sdk = await loadYandexSdk();
@@ -20,7 +23,8 @@ export async function initPlatform() {
     }
   }
   const p = new Platform(ysdk, player, payments);
-  await p.loadCatalog();
+  // в приложении цены RuStore подгружаются фоном — загрузку игры из-за сети не задерживаем
+  if (p.app) p.loadCatalog(); else await p.loadCatalog();
   return p;
 }
 
@@ -52,6 +56,51 @@ class Platform {
     // Android-приложение (RuStore): игра открыта в WebView из файлов приложения
     this.isApp = !!window.LLAndroid || location.hostname === 'appassets.androidplatform.net';
     this.lang = ysdk?.environment?.i18n?.lang || 'ru';
+    // платежи RuStore: есть, если сборка знает ID приложения в консоли RuStore
+    this.app = null;
+    try { if (window.LLAndroid?.payConfigured?.()) this.app = window.LLAndroid; } catch { this.app = null; }
+    this.appPay = false;
+    this.flush = null; // сохранить игру сразу после выдачи покупки (задаёт main.js)
+    this.waiters = {};
+    if (this.app) {
+      window.__LL_pay = {
+        ready: (d) => this.resolve('ready', d),
+        result: (d) => this.resolve('result', d),
+        pending: (d) => this.resolve('pending', d),
+      };
+    }
+  }
+
+  // ---------- мост к Android ----------
+
+  wait(name, call, ms) {
+    return new Promise((ok) => {
+      const timer = setTimeout(() => { delete this.waiters[name]; ok(null); }, ms);
+      this.waiters[name] = (d) => { clearTimeout(timer); ok(d); };
+      try { call(); } catch { clearTimeout(timer); delete this.waiters[name]; ok(null); }
+    });
+  }
+
+  resolve(name, d) {
+    const w = this.waiters[name];
+    delete this.waiters[name];
+    w?.(d);
+  }
+
+  granted() {
+    try { return JSON.parse(localStorage.getItem(GRANTED_KEY) || '[]'); } catch { return []; }
+  }
+
+  // Выдать товар ровно один раз, сохранить игру и только потом подтвердить оплату в RuStore.
+  grantOnce(productId, purchaseId, onGrant) {
+    const list = this.granted();
+    if (!list.includes(purchaseId)) {
+      onGrant(productId);
+      list.push(purchaseId);
+      try { localStorage.setItem(GRANTED_KEY, JSON.stringify(list.slice(-200))); } catch { /* нет хранилища */ }
+      try { this.flush?.(); } catch { /* сохранение не удалось — товар уже в игре */ }
+    }
+    try { this.app.payConfirm(purchaseId); } catch { /* подтвердится при следующем запуске */ }
   }
 
   ready() {
@@ -118,9 +167,17 @@ class Platform {
 
   // ---------- покупки ----------
 
-  paymentsReady() { return !!this.payments || this.testPay; }
+  paymentsReady() { return !!this.payments || this.testPay || this.appPay; }
 
   async loadCatalog() {
+    if (this.app) {
+      const d = await this.wait('ready', () => this.app.payInit(PRODUCTS.map((p) => p.id).join(',')), 8000);
+      if (d?.ok) {
+        Object.assign(this.catalog, d.prices || {});
+        this.appPay = Object.keys(this.catalog).length > 0;
+      } else if (d) console.warn('Платежи RuStore недоступны:', d.reason);
+      return;
+    }
     if (!this.payments) return;
     try {
       const list = await this.payments.getCatalog();
@@ -132,6 +189,12 @@ class Platform {
 
   // onGrant(productId) вызывается после оплаты; затем покупка подтверждается (consume).
   async purchase(id, onGrant) {
+    if (this.appPay) {
+      const r = await this.wait('result', () => this.app.payBuy(id), 15 * 60 * 1000);
+      if (!r?.ok || !r.purchaseId) return false;
+      this.grantOnce(r.productId || id, r.purchaseId, onGrant);
+      return true;
+    }
     if (this.testPay && !this.payments) { onGrant(id); return true; }
     if (!this.payments) return false;
     try {
@@ -146,6 +209,11 @@ class Platform {
 
   // Покупки, оплаченные, но не выданные (например, закрыли вкладку).
   async restorePurchases(onGrant) {
+    if (this.app) {
+      const d = await this.wait('pending', () => this.app.payRestore(), 15000);
+      for (const p of d?.list || []) this.grantOnce(p.productId, p.purchaseId, onGrant);
+      return;
+    }
     if (!this.payments) return;
     try {
       const list = await this.payments.getPurchases();
