@@ -145,7 +145,7 @@ export class Splash {
     drawBody(ctx, LOOKS.hero, hp, 0, 2);
     ctx.save();
     ctx.translate(0, -0.86);
-    drawHead(ctx, LOOKS.hero, hp, 0, {});
+    drawHead(ctx, LOOKS.hero, hp, 0, { grin: true });
     ctx.restore();
     ctx.translate(0.52, -0.6);
     ctx.rotate(0.3);

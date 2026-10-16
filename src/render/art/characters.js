@@ -522,10 +522,10 @@ export function hoodHead(ctx, p, opts = {}) {
   ctx.beginPath();
   ctx.ellipse(0.06, 0.07, 0.29, 0.28, 0, 0, Math.PI * 2);
   ink(ctx, p.trim, 0.04);
-  face(ctx, p, blink, opts.shout);
+  face(ctx, p, blink, opts.shout, true, opts.grin);
 }
 
-function face(ctx, p, blink, shout, hair = true) {
+function face(ctx, p, blink, shout, hair = true, grin = false) {
   ctx.beginPath();
   ctx.ellipse(0.07, 0.09, 0.245, 0.235, 0, 0, Math.PI * 2);
   ink(ctx, p.skin, 0.035);
@@ -574,6 +574,27 @@ function face(ctx, p, blink, shout, hair = true) {
   ctx.moveTo(0.14, 0.065); ctx.lineTo(0.235, 0.03);
   ctx.stroke();
   ctx.lineWidth = 0.018;
+  if (grin) {
+    // уверенная ухмылка: рот-полумесяц с зубами, правый уголок выше
+    ctx.save();
+    ctx.translate(0.115, 0.215);
+    ctx.rotate(-0.16);
+    ctx.beginPath();
+    ctx.moveTo(-0.055, 0);
+    ctx.quadraticCurveTo(0, 0.075, 0.06, -0.008);
+    ctx.closePath();
+    ctx.fillStyle = '#5a1e24';
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-0.06, -0.01, 0.13, 0.022);
+    ctx.restore();
+    ctx.stroke();
+    ctx.restore();
+    ctx.lineCap = 'butt';
+    return;
+  }
   ctx.beginPath();
   if (shout) ctx.ellipse(0.11, 0.22, 0.03, 0.025, 0, 0, Math.PI * 2);
   else ctx.arc(0.11, 0.245, 0.03, Math.PI * 1.15, Math.PI * 1.85);
