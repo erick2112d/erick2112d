@@ -6,6 +6,9 @@ plugins {
 // Подпись релиза берётся из переменных окружения (секреты GitHub) — в репозитории ключа нет.
 def keystorePath = System.getenv('LL_KEYSTORE_PATH')
 def hasReleaseKey = keystorePath != null && file(keystorePath).exists()
+// Платежи RuStore (только для ИП/юрлиц): SDK попадает в сборку, лишь когда задан ID приложения в консоли
+def rustoreAppId = (System.getenv('RUSTORE_APP_ID') ?: '').trim()
+def withPay = !rustoreAppId.isEmpty()
 
 android {
     namespace 'ru.mayak.lastlight'
@@ -18,7 +21,7 @@ android {
         versionCode Integer.parseInt(System.getenv('LL_VERSION_CODE') ?: '1')
         versionName System.getenv('LL_VERSION_NAME') ?: '0.3.0'
         // ID приложения в консоли RuStore (цифры из адреса console.rustore.ru/apps/<ID>/...) — включает платежи
-        resValue 'string', 'rustore_console_app_id', (System.getenv('RUSTORE_APP_ID') ?: '').trim()
+        resValue 'string', 'rustore_console_app_id', rustoreAppId
     }
 
     signingConfigs {
@@ -44,6 +47,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    sourceSets {
+        main.java.srcDirs += withPay ? 'src/pay/java' : 'src/nopay/java'
+    }
+
     kotlinOptions {
         jvmTarget = '17'
     }
@@ -55,7 +62,7 @@ android {
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
-    implementation 'ru.rustore.sdk:pay:11.2.0'   // платежи RuStore (Pay SDK)
+    if (withPay) implementation 'ru.rustore.sdk:pay:11.2.0'   // платежи RuStore (Pay SDK)
 }
 
 // Перед сборкой кладём в приложение свежую однофайловую версию игры (npm run single → dist/last-light.html).
