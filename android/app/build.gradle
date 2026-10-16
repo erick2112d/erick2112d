@@ -55,7 +55,7 @@ android {
 
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
-    implementation 'ru.rustore.sdk:pay:+'   // платежи RuStore (Pay SDK)
+    implementation 'ru.rustore.sdk:pay:11.2.0'   // платежи RuStore (Pay SDK)
 }
 
 // Перед сборкой кладём в приложение свежую однофайловую версию игры (npm run single → dist/last-light.html).

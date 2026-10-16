@@ -24,13 +24,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Версии SDK RuStore (диагностика)
-        run: |
-          for r in https://nexus-external.vkteam.ru/repository/maven-rustore-exposed https://artifactory-external.vkpartner.ru/artifactory/maven-rustore-exposed https://artifactory-external.vkpartner.ru/artifactory/maven; do
-            echo "== $r"; curl -sS -m 20 "$r/ru/rustore/sdk/pay/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | tail -8 || true
-            curl -sS -m 20 "$r/ru/rustore/sdk/bom/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | tail -3 || true
-          done
-
       - name: Однофайловая версия игры
         run: node scripts/single.mjs
 
