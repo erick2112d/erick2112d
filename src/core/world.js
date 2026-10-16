@@ -255,10 +255,29 @@ export const worldMixin = {
   // Контур, о который спотыкаются герой и союзники: меньше клетки здания и смещён к его «подошве»,
   // чтобы между соседними постройками и позади них можно было пройти.
   colliderBox(b) {
+    return this.colliderBoxes(b)[0];
+  },
+
+  // Забор для своих — узкие полосы по рисунку: горизонтальный у нижнего края клетки, вертикальный посередине,
+  // на углах обе. Враги по-прежнему упираются во всю клетку (см. pushOutOfRect).
+  colliderBoxes(b) {
     const cfg = BUILDINGS[b.type];
-    if (cfg.wall) return { x0: b.tx, y0: b.ty, x1: b.tx + 1, y1: b.ty + 1 };
+    if (cfg.wall) {
+      const isWall = (x, y) => { const o = this.buildingAt(x, y); return !!(o && BUILDINGS[o.type].wall); };
+      const n = isWall(b.tx, b.ty - 1); const sth = isWall(b.tx, b.ty + 1);
+      const w = isWall(b.tx - 1, b.ty); const e = isWall(b.tx + 1, b.ty);
+      const boxes = [];
+      const hy0 = b.ty + 0.55; const hy1 = b.ty + 0.95;
+      if (e || w || (!n && !sth)) {
+        boxes.push({ x0: b.tx + (w ? 0 : 0.22), y0: hy0, x1: b.tx + (e ? 1 : 0.78), y1: hy1 });
+      }
+      if (n || sth) {
+        boxes.push({ x0: b.tx + 0.3, y0: b.ty + (n ? 0 : 0.5), x1: b.tx + 0.7, y1: b.ty + (sth ? 1 : 0.95) });
+      }
+      return boxes;
+    }
     const c = cfg.collider || (b.size >= 3 ? [0.4, 0.75, 0.3] : b.size === 2 ? [0.3, 0.6, 0.15] : [0.22, 0.38, 0.1]);
-    return { x0: b.tx + c[0], y0: b.ty + c[1], x1: b.tx + b.size - c[0], y1: b.ty + b.size - c[2] };
+    return [{ x0: b.tx + c[0], y0: b.ty + c[1], x1: b.tx + b.size - c[0], y1: b.ty + b.size - c[2] }];
   },
 
   // Точка (x, y) занята для союзников с запасом pad?
@@ -274,8 +293,9 @@ export const worldMixin = {
         if (bid) {
           const b = this.bMap.get(bid);
           if (b && !b.destroyed && this.isSolidCell(i, 'friend')) {
-            const q = this.colliderBox(b);
-            if (x > q.x0 - pad && x < q.x1 + pad && y > q.y0 - pad && y < q.y1 + pad) return true;
+            for (const q of this.colliderBoxes(b)) {
+              if (x > q.x0 - pad && x < q.x1 + pad && y > q.y0 - pad && y < q.y1 + pad) return true;
+            }
           }
         }
         const nid = this.nodeGrid[i];
@@ -320,16 +340,15 @@ export const worldMixin = {
   },
 
   pushOutOfRect(u, b, who = 'enemy') {
-    let x0; let x1; let y0; let y1;
-    let rr = u.r;
     if (who === 'friend') {
-      ({ x0, y0, x1, y1 } = this.colliderBox(b));
-      rr = u.r * 0.8;
-    } else {
-      const inset = BUILDINGS[b.type].inset ?? 0.12;
-      x0 = b.tx + inset; x1 = b.tx + b.size - inset;
-      y0 = b.ty + inset; y1 = b.ty + b.size - inset;
+      for (const q of this.colliderBoxes(b)) this.pushOutOfBox(u, q.x0, q.y0, q.x1, q.y1, u.r * 0.8);
+      return;
     }
+    const inset = BUILDINGS[b.type].inset ?? 0.12;
+    this.pushOutOfBox(u, b.tx + inset, b.ty + inset, b.tx + b.size - inset, b.ty + b.size - inset, u.r);
+  },
+
+  pushOutOfBox(u, x0, y0, x1, y1, rr) {
     const px = Math.max(x0, Math.min(u.x, x1));
     const py = Math.max(y0, Math.min(u.y, y1));
     let dx = u.x - px;

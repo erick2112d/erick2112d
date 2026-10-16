@@ -49,6 +49,8 @@ class Platform {
     this.gameplayOn = false;
     this.catalog = {};
     this.testPay = new URLSearchParams(location.search).has('testpay');
+    // Android-приложение (RuStore): игра открыта в WebView из файлов приложения
+    this.isApp = !!window.LLAndroid || location.hostname === 'appassets.androidplatform.net';
     this.lang = ysdk?.environment?.i18n?.lang || 'ru';
   }
 
@@ -95,6 +97,9 @@ class Platform {
     if (!this.ysdk) { onClose?.(); return; }
     this.ysdk.adv.showFullscreenAdv({ callbacks: { onOpen: () => onOpen?.(), onClose: () => onClose?.(), onError: () => onClose?.() } });
   }
+
+  // Реклама есть на Яндекс Играх; в браузере для проверки — заглушка; в приложении пока нет.
+  adsAvailable() { return this.isYandex || !this.isApp; }
 
   showRewardedAd({ onOpen, onRewarded, onClose }) {
     if (!this.ysdk) {

@@ -201,6 +201,18 @@ export class Hud {
 
   sfx(name) { this.hooks.sfx?.(name); }
 
+  // Системная кнопка «Назад»: закрывает верхнее окно, иначе открывает паузу. Всегда «обработано».
+  back() {
+    if (this.modal === 'menu') this.closeModal();
+    else if (this.modal && this.modal !== 'result') this.closeModal();
+    else if (this.modal) return true;
+    else if (this.window) this.closeWindow();
+    else if (this.buildType) this.cancelBuild();
+    else if (this.card) this.closeCard();
+    else this.openMenu();
+    return true;
+  }
+
   confirm(text, onYes, opts = {}) {
     this.confirmFn = onYes;
     this.openModal(`${opts.icon ? `<img class="modal-icon" src="${opts.icon}" alt="">` : ''}<div class="ribbon ${opts.danger ? 'dark' : ''}"><span>${opts.title || 'Подтверди'}</span></div>
@@ -294,6 +306,7 @@ export class Hud {
       case 'newGameAsk': this.openConfirmNew(); break;
       case 'newGame': this.closeModal(); this.hooks.newGame(); break;
       case 'resume': this.closeModal(); break;
+      case 'exitApp': this.hooks.save?.(); window.LLAndroid?.exit(); break;
       default:
     }
   }
@@ -878,7 +891,9 @@ export class Hud {
     } else {
       const ad = g.adGemsReadyIn();
       const art = { gems_small: uiIcon('shop', 72), gems_medium: uiIcon('gemPile', 72), gems_large: uiIcon('gemChest', 72) };
-      const products = PRODUCTS.filter((p) => !(p.once && g.shop.starterBought)).map((p) => `<div class="shop-card ${p.once ? 'special' : ''}">
+      const app = this.hooks.isApp?.() && !this.hooks.paymentsReady();
+      const ads = this.hooks.adsAvailable?.() !== false;
+      const products = app ? '' : PRODUCTS.filter((p) => !(p.once && g.shop.starterBought)).map((p) => `<div class="shop-card ${p.once ? 'special' : ''}">
           ${p.bonus ? `<span class="ribbon-tag">${p.bonus}</span>` : ''}${p.once ? '<span class="ribbon-tag hot">Один раз</span>' : ''}
           <div class="shop-name">${esc(p.name)}</div>
           <div class="shop-art"><img src="${p.item ? itemIcon(p.item) : art[p.id] || uiIcon('shop', 72)}" alt=""></div>
@@ -886,11 +901,12 @@ export class Hud {
           ${p.desc ? `<div class="muted small">${esc(p.desc)}</div>` : ''}
           <button class="primary" data-action="buyProduct" data-product="${p.id}" ${this.hooks.paymentsReady() ? '' : 'disabled'}>${esc(this.hooks.productPrice(p.id) || p.fallbackPrice)}</button></div>`).join('');
       body = `<div class="pane scroll-area"><div class="shop-grid">
-        <div class="shop-card ad"><div class="shop-name">Подарок за рекламу</div><div class="shop-art"><img src="${uiIcon('ad', 72)}" alt=""></div>
+        ${ads ? `<div class="shop-card ad"><div class="shop-name">Подарок за рекламу</div><div class="shop-art"><img src="${uiIcon('ad', 72)}" alt=""></div>
           <div class="shop-gems"><img src="${resIcon('gems', 32)}" alt=""><b>${AD_GEMS.amount}</b></div>
-          <button class="ad-btn" data-action="adGems" ${ad > 0 ? 'disabled' : ''}>${ad > 0 ? `Через ${Math.floor(ad / 60)}:${String(ad % 60).padStart(2, '0')}` : '▶ Смотреть'}</button></div>
+          <button class="ad-btn" data-action="adGems" ${ad > 0 ? 'disabled' : ''}>${ad > 0 ? `Через ${Math.floor(ad / 60)}:${String(ad % 60).padStart(2, '0')}` : '▶ Смотреть'}</button></div>` : ''}
         ${products}</div>
-        ${this.hooks.paymentsReady() ? '' : '<div class="muted small center">Покупки доступны в игре на Яндекс Играх.</div>'}
+        ${app ? '<div class="muted small center">Покупка самоцветов появится в одной из следующих версий. Загляни во вкладку «Товары».</div>'
+          : this.hooks.paymentsReady() ? '' : '<div class="muted small center">Покупки доступны в игре на Яндекс Играх.</div>'}
         <div class="muted small center">Самоцветы также выпадают с волн (0–2), боссов, сундуков и за достижения. За них можно строить и улучшать без ресурсов.</div></div>`;
     }
     return `${winHead('Магазин', `<div class="cur gems"><img src="${resIcon('gems', 32)}" alt=""><b>${fmt(g.res.gems)}</b></div>`)}${tabs}${body}`;
@@ -972,7 +988,7 @@ export class Hud {
         <div class="reward-list">${items.map(([k, v]) => `<div class="reward ${k === 'gems' ? 'gem' : ''}"><img src="${resIcon(k, 48)}" alt=""><b>+${fmt(v)}</b><span>${esc(resName(k))}</span></div>`).join('')}</div>
         ${loot.length ? `<div class="muted">Добыча с тварей: ${loot.map(([k, v]) => `${fmt(v)} <img class="inl" src="${resIcon(k)}" alt="">`).join(' · ')}</div>` : ''}
         ${est.hp > 0 ? `<div class="muted small">${g.buildings.some((b) => b.type === 'repairHouse' && !b.destroyed) ? 'Ремонтники уже идут чинить базу.' : 'Постройки повреждены — почини их в карточках или построй Дом ремонтников.'}</div>` : ''}
-        <button class="ad-btn" data-action="rewarded">▶ Реклама: ещё +${fmt(rw.gold)} монет</button>
+        ${this.hooks.adsAvailable?.() === false ? '' : `<button class="ad-btn" data-action="rewarded">▶ Реклама: ещё +${fmt(rw.gold)} монет</button>`}
         <div class="result-actions"><button data-action="nextWave" data-wave="${n}">Повторить ${n}</button>
           <button class="primary" data-action="nextWave" data-wave="${next}">Дальше: волна ${next}</button></div>`, 'result');
     } else {
@@ -993,7 +1009,7 @@ export class Hud {
         <div>${ico('defense')}<span><b>Здание</b> — нажми на него: улучшение, эволюция, мастерская, ремонт, снос</span></div>
         <div>${ico('hp')}<span><b>Сердце</b> — нажми на него, чтобы раздвинуть мглу и открыть новые земли</span></div>
       </div>
-      <div class="result-actions"><button data-action="newGameAsk">Новая игра</button><button class="primary" data-action="resume">Продолжить</button></div>`, 'menu');
+      <div class="result-actions"><button data-action="newGameAsk">Новая игра</button>${window.LLAndroid ? '<button data-action="exitApp">Выйти</button>' : ''}<button class="primary" data-action="resume">Продолжить</button></div>`, 'menu');
   }
 
   openConfirmNew() {

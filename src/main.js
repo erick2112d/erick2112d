@@ -58,6 +58,8 @@ async function boot() {
       platform.purchase(id, (pid) => game.grantProduct(pid)).finally(() => { adOpen = false; audio.resume('ad'); save(); done?.(); });
     },
     paymentsReady: () => platform.paymentsReady(),
+    adsAvailable: () => platform.adsAvailable(),
+    isApp: () => platform.isApp,
     productPrice: (id) => platform.price(id),
     newGame: () => {
       platform.clear();
@@ -72,6 +74,7 @@ async function boot() {
     soundOn: () => audio.on,
     click: () => { audio.unlock(); audio.play('click'); },
     sfx: (name) => audio.play(name),
+    save: () => save(),
     modalChanged: () => {},
   });
   const input = new Input(canvas, hud, renderer, () => game);
@@ -79,9 +82,12 @@ async function boot() {
   window.addEventListener('keydown', () => audio.unlock(), { capture: true });
   window.addEventListener('resize', () => renderer.resize());
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { paused = true; audio.suspend('hidden'); save(); } else { paused = false; audio.resume('hidden'); }
-  });
+  const setHidden = (hidden) => {
+    if (hidden) { paused = true; audio.suspend('hidden'); save(); } else { paused = false; audio.resume('hidden'); }
+  };
+  document.addEventListener('visibilitychange', () => setHidden(document.hidden));
+  // Android-оболочка (RuStore) вызывает это при сворачивании, возврате и нажатии «Назад»
+  window.__LL_app = { pause: () => setHidden(true), resume: () => setHidden(false), back: () => hud.back() };
   window.addEventListener('pagehide', save);
 
   // покупки, которые оплатили, но не успели выдать

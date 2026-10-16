@@ -259,6 +259,30 @@ test('коллайдеры: между зданиями вплотную мож�
   assert.ok(Math.hypot(g.hero.x - (tx + 5.5), g.hero.y - (ty + 2)) < 0.6, 'дошёл по касанию: ' + g.hero.x.toFixed(2) + ',' + g.hero.y.toFixed(2));
 });
 
+test('коллайдеры: между забором и зданием вплотную можно пройти, сквозь забор — нет', () => {
+  const g = new Game();
+  rich(g);
+  g.heart().level = 12;
+  const c = g.heartCenter();
+  const tx = Math.floor(c.x) - 8;
+  const ty = Math.floor(c.y) - 3;
+  clearArea(g, tx - 3, ty - 4, tx + 6, ty + 8);
+  // вертикальный забор в столбце tx, генератор вплотную справа
+  for (let y = ty - 2; y <= ty + 5; y++) assert.ok(g.build('wall', tx, y, { quiet: true }));
+  assert.ok(g.build('generator', tx + 1, ty));
+  g.update(1 / 60);
+  g.hero.x = tx + 1.05; g.hero.y = ty + 4.5;
+  g.hero.input = { x: 0, y: -1 };
+  step(g, 2.5);
+  assert.ok(g.hero.y < ty - 0.3, 'прошёл между забором и генератором: ' + g.hero.y.toFixed(2));
+  // поперёк забора пройти нельзя
+  g.hero.x = tx + 1.5; g.hero.y = ty - 1.5;
+  g.hero.input = { x: -1, y: 0 };
+  step(g, 1.5);
+  assert.ok(g.hero.x > tx + 0.5, 'забор держит: ' + g.hero.x.toFixed(2));
+  g.hero.input = { x: 0, y: 0 };
+});
+
 test('кузня: изучение оружия, экипировка, быстрые слоты', () => {
   const g = new Game();
   rich(g);

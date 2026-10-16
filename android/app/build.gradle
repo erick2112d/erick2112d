@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Подпись релиза берётся из переменных окружения (секреты GitHub) — в репозитории ключа нет.
+def keystorePath = System.getenv('LL_KEYSTORE_PATH')
+def hasReleaseKey = keystorePath != null && file(keystorePath).exists()
+
+android {
+    namespace 'ru.mayak.lastlight'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'ru.mayak.lastlight'   // должно совпадать с названием пакета в консоли RuStore
+        minSdk 24
+        targetSdk 35
+        versionCode Integer.parseInt(System.getenv('LL_VERSION_CODE') ?: '1')
+        versionName System.getenv('LL_VERSION_NAME') ?: '0.3.0'
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(keystorePath)
+                storePassword System.getenv('LL_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('LL_KEY_ALIAS') ?: 'lastlight'
+                keyPassword System.getenv('LL_KEY_PASSWORD') ?: System.getenv('LL_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (hasReleaseKey) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+// Перед сборкой кладём в приложение свежую однофайловую версию игры (npm run single → dist/last-light.html).
+tasks.register('copyGame', Copy) {
+    from(rootProject.file('../dist/last-light.html')) { rename { 'index.html' } }
+    into 'src/main/assets'
+}
+preBuild.dependsOn copyGame
