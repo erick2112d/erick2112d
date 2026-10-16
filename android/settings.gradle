@@ -11,6 +11,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         // SDK платежей RuStore
+        maven { url 'https://nexus-external.vkteam.ru/repository/maven-rustore-exposed/' }
         maven { url 'https://artifactory-external.vkpartner.ru/artifactory/maven-rustore-exposed/' }
         maven { url 'https://artifactory-external.vkpartner.ru/artifactory/maven' }
     }

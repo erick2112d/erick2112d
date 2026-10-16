@@ -46,11 +46,11 @@ class RuStorePay(context: Context, private val send: (String) -> Unit) {
         }
         client.getPurchaseInteractor().getPurchaseAvailability()
             .addOnSuccessListener { result ->
-                when (result) {
-                    is PurchaseAvailabilityResult.Available -> loadPrices(ids)
-                    is PurchaseAvailabilityResult.Unavailable ->
-                        reply("ready", JSONObject().put("ok", false).put("reason", err(result.cause)))
-                    else -> reply("ready", JSONObject().put("ok", false).put("reason", "unknown"))
+                // Unknown (нет приложения RuStore) — цены всё равно берём: оплата может пройти и без него
+                if (result is PurchaseAvailabilityResult.Unavailable) {
+                    reply("ready", JSONObject().put("ok", false).put("reason", err(result.cause)))
+                } else {
+                    loadPrices(ids)
                 }
             }
             .addOnFailureListener { e -> reply("ready", JSONObject().put("ok", false).put("reason", err(e))) }
