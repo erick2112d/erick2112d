@@ -34,6 +34,7 @@ export class Game {
     this.projectiles = [];
     this.bolts = [];               // мгновенные молнии (для отрисовки)
     this.wallGroups = new Map();
+    this.boxVersion = 1;
     this.phase = 'build';
     this.wave = null;
     this.snapshot = null;
@@ -81,7 +82,8 @@ export class Game {
   heart() { return this.buildings[0]; }
   get heartLevel() { return this.buildings[0]?.level ?? 1; }
   heartCenter() { return this.center(this.heart()); }
-  center(b) { const s = b.size; return { x: b.tx + s / 2, y: b.ty + s / 2 }; }
+  // постройки не двигаются — центр считаем один раз (только для чтения)
+  center(b) { return b._c || (b._c = { x: b.tx + b.size / 2, y: b.ty + b.size / 2 }); }
   emit(type, data = {}) { this.events.push({ ...data, type }); }
   drainEvents() { const e = this.events; this.events = []; return e; }
   byId(id) { return this.bMap.get(id); }
@@ -90,7 +92,8 @@ export class Game {
   update(dt) {
     this.time += dt;
     if (this.wallsDirty) this.rebuildWallGroups();
-    if (this.flowDirty) this.rebuildFlow();
+    // поле пути врагов нужно только когда по базе идут твари: между волнами не пересчитываем на каждое дерево
+    if (this.flowDirty && (this.phase === 'wave' || this.enemies.some((e) => !e.dead && !e.guard))) this.rebuildFlow();
     if (this.auraDirty) this.recomputeAuras();
     this.recomputeEnergy();
     this.updateNodes(dt);

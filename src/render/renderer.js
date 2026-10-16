@@ -47,7 +47,8 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = this.lowQ ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    const full = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(full, [full, 1.5, 1.25][this.qStep || 0]);
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     this.dpr = dpr;
@@ -296,10 +297,13 @@ export class Renderer {
 
   frame(dt, ui) {
     this.time += dt;
-    // если кадры долго медленные — снижаем плотность пикселей (слабые телефоны)
-    this.ft = (this.ft ?? 0.016) * 0.97 + dt * 0.03;
-    if (!this.lowQ && this.time > 5 && this.ft > 0.034 && (window.devicePixelRatio || 1) > 1) {
-      this.lowQ = true;
+    // если кадры долго медленные (слабый телефон) — понемногу снижаем плотность пикселей: 2 → 1.5 → 1.25
+    this.ft = (this.ft ?? 0.016) * 0.97 + Math.min(dt, 0.1) * 0.03;
+    this.slowFor = this.ft > 0.036 ? (this.slowFor || 0) + dt : 0;
+    const step = this.qStep || 0;
+    if (this.time > 6 && this.slowFor > 3 && step < 2 && this.dpr > 1.3) {
+      this.qStep = step + 1;
+      this.slowFor = -2;
       this.resize();
     }
     const g = this.game;
@@ -340,7 +344,7 @@ export class Renderer {
     this.drawOverlays(ctx, ui);
 
     ctx.setTransform(d, 0, 0, d, 0, 0);
-    this.fx.drawTexts(ctx, this.toScreen, s);
+    this.fx.drawTexts(ctx, this.toScreen, s, d);
     this.drawObjectivePointer(ctx, ui);
     this.drawOffscreenEnemies(ctx);
   }
@@ -499,33 +503,52 @@ export class Renderer {
   drawWorldObjects(ctx, ui) {
     const g = this.game;
     const v = this.view();
-    const items = [];
+    // Список «что рисовать» переиспользуется между кадрами: без новых объектов и функций на каждый кадр.
+    const pool = this._pool || (this._pool = []);
+    const order = this._order || (this._order = []);
+    let n = 0;
+    const add = (y, t, o) => {
+      let it = pool[n];
+      if (!it) pool[n] = it = { y: 0, t: 0, o: null };
+      it.y = y; it.t = t; it.o = o;
+      order[n++] = it;
+    };
     const visible = (x, y) => x > v.x0 && x < v.x1 && y > v.y0 && y < v.y1;
-    for (const n of g.nodes) if (visible(n.x, n.y)) items.push({ y: n.y + 0.3, draw: () => this.drawNode(ctx, n) });
+    for (const nd of g.nodes) if (visible(nd.x, nd.y)) add(nd.y + 0.3, 0, nd);
     for (const b of g.buildings) {
       const c = g.center(b);
-      if (visible(c.x, c.y)) items.push({ y: b.ty + b.size, draw: () => this.drawBuilding(ctx, b) });
+      if (visible(c.x, c.y)) add(b.ty + b.size, 1, b);
     }
     const a = g.activities;
-    for (const c of a.chests) if (visible(c.x, c.y)) items.push({ y: c.y + 0.3, draw: () => this.at(ctx, c.x, c.y + 0.3, () => { this.shadow(ctx, 0.35); N.chest(ctx, this.time); }) });
-    for (const s of a.shrines) {
-      if (visible(s.x, s.y) && g.inTerritory(s.x, s.y, -1.5)) items.push({ y: s.y + 0.3, draw: () => this.at(ctx, s.x, s.y + 0.3, () => { this.shadow(ctx, 0.5); N.shrine(ctx, s.readyAt <= g.time, this.time); }) });
+    for (const c of a.chests) if (visible(c.x, c.y)) add(c.y + 0.3, 2, c);
+    for (const sh of a.shrines) if (visible(sh.x, sh.y) && g.inTerritory(sh.x, sh.y, -1.5)) add(sh.y + 0.3, 3, sh);
+    for (const nt of a.notes) if (visible(nt.x, nt.y) && g.inTerritory(nt.x, nt.y, -1)) add(nt.y + 0.3, 4, nt);
+    for (const r of a.rifts) if (visible(r.x, r.y)) add(r.y + 0.3, 5, r);
+    if (a.merchant && visible(a.merchant.x, a.merchant.y)) add(a.merchant.y + 0.3, 6, a.merchant);
+    if (!g.hero.dead) add(g.hero.y, 7, g.hero);
+    for (const u of g.allies) if (visible(u.x, u.y)) add(u.y, 8, u);
+    for (const u of g.workers) if (!u.hidden && visible(u.x, u.y)) add(u.y, 9, u);
+    for (const u of g.repairers) if (visible(u.x, u.y)) add(u.y, 10, u);
+    for (const e of g.enemies) if (visible(e.x, e.y)) add(e.y + (e.flying ? 1.5 : 0), 11, e);
+    order.length = n;
+    order.sort(byY);
+    for (let i = 0; i < n; i++) {
+      const o = order[i].o;
+      switch (order[i].t) {
+        case 0: this.drawNode(ctx, o); break;
+        case 1: this.drawBuilding(ctx, o); break;
+        case 2: this.at(ctx, o.x, o.y + 0.3, () => { this.shadow(ctx, 0.35); N.chest(ctx, this.time); }); break;
+        case 3: this.at(ctx, o.x, o.y + 0.3, () => { this.shadow(ctx, 0.5); N.shrine(ctx, o.readyAt <= g.time, this.time); }); break;
+        case 4: this.at(ctx, o.x, o.y + 0.3, () => { this.shadow(ctx, 0.25); N.note(ctx, this.time); }); break;
+        case 5: this.drawRift(ctx, o); break;
+        case 6: this.at(ctx, o.x, o.y + 0.3, () => { this.shadow(ctx, 0.9); N.wagon(ctx, this.time); }); break;
+        case 7: this.drawUnit(ctx, o, 'hero'); break;
+        case 8: this.drawUnit(ctx, o, o.type); break;
+        case 9: this.drawUnit(ctx, o, 'worker'); break;
+        case 10: this.drawUnit(ctx, o, 'repairer'); break;
+        default: this.drawUnit(ctx, o, ENEMIES[o.type].look);
+      }
     }
-    for (const n of a.notes) {
-      if (visible(n.x, n.y) && g.inTerritory(n.x, n.y, -1)) items.push({ y: n.y + 0.3, draw: () => this.at(ctx, n.x, n.y + 0.3, () => { this.shadow(ctx, 0.25); N.note(ctx, this.time); }) });
-    }
-    for (const r of a.rifts) if (visible(r.x, r.y)) items.push({ y: r.y + 0.3, draw: () => this.drawRift(ctx, r) });
-    if (a.merchant && visible(a.merchant.x, a.merchant.y)) {
-      const m = a.merchant;
-      items.push({ y: m.y + 0.3, draw: () => this.at(ctx, m.x, m.y + 0.3, () => { this.shadow(ctx, 0.9); N.wagon(ctx, this.time); }) });
-    }
-    if (!g.hero.dead) items.push({ y: g.hero.y, draw: () => this.drawUnit(ctx, g.hero, 'hero') });
-    for (const u of g.allies) if (visible(u.x, u.y)) items.push({ y: u.y, draw: () => this.drawUnit(ctx, u, u.type) });
-    for (const u of g.workers) if (!u.hidden && visible(u.x, u.y)) items.push({ y: u.y, draw: () => this.drawUnit(ctx, u, 'worker') });
-    for (const u of g.repairers) if (visible(u.x, u.y)) items.push({ y: u.y, draw: () => this.drawUnit(ctx, u, 'repairer') });
-    for (const e of g.enemies) if (visible(e.x, e.y)) items.push({ y: e.y + (e.flying ? 1.5 : 0), draw: () => this.drawUnit(ctx, e, ENEMIES[e.type].look) });
-    items.sort((p, q) => p.y - q.y);
-    for (const it of items) it.draw();
     // герой за зданием просвечивает, чтобы не теряться
     const h = g.hero;
     if (!h.dead && g.buildings.some((b) => !b.destroyed && !BUILDINGS[b.type].wall && h.y < b.ty + b.size - 0.05 && h.y > b.ty - 1.6
@@ -570,7 +593,8 @@ export class Renderer {
       ctx.rotate(sway);
       drawSprite(ctx, sp);
     } else if (n.kind === 'bush') {
-      N.bush(ctx, n.hp, n.maxHp);
+      const k = Math.max(0, Math.min(n.maxHp, Math.round(n.hp)));
+      drawSprite(ctx, sprite(`bush|${k}|${n.maxHp}`, [-0.5, -0.6, 0.5, 0.15], (c) => N.bush(c, k, n.maxHp)));
     } else if (['crystal', 'mithril', 'meteor'].includes(n.kind)) {
       N.rock(ctx, n.kind, n.hp, n.maxHp, this.time);
     } else {
@@ -1038,6 +1062,11 @@ export class Renderer {
     const oy = fh / 2 - this.cam.y * s;
     const c = g.heartCenter();
     const R = g.radius();
+    // внутри круга радиусом R − 1.6 мглы нет совсем (там её стирает градиент ниже)
+    const clearR = Math.max(0, (R - 1.6) * this.scale);
+    const [hx, hy] = this.toScreen(c.x, c.y);
+    const far = Math.max(Math.hypot(hx, hy), Math.hypot(this.w - hx, hy), Math.hypot(hx, this.h - hy), Math.hypot(this.w - hx, this.h - hy));
+    if (far < clearR - 2) return; // весь экран в свете — мглу не рисуем вовсе
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'source-over';
     f.clearRect(0, 0, fw, fh);
@@ -1078,7 +1107,20 @@ export class Renderer {
     ctx.save();
     ctx.setTransform(d, 0, 0, d, 0, 0);
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.fogCanvas, 0, 0, fw, fh, 0, 0, this.w, this.h);
+    // прозрачную середину (вписанный в чистый круг квадрат) не перерисовываем: кладём мглу полосами вокруг неё
+    const half = (clearR - 6) / Math.SQRT2;
+    const ix0 = Math.max(0, Math.ceil((hx - half) * k));
+    const ix1 = Math.min(fw, Math.floor((hx + half) * k));
+    const iy0 = Math.max(0, Math.ceil((hy - half) * k));
+    const iy1 = Math.min(fh, Math.floor((hy + half) * k));
+    const blit = (x, y, w, h) => { if (w > 0 && h > 0) ctx.drawImage(this.fogCanvas, x, y, w, h, x / k, y / k, w / k, h / k); };
+    if (ix1 - ix0 < 4 || iy1 - iy0 < 4) blit(0, 0, fw, fh);
+    else {
+      blit(0, 0, fw, iy0);
+      blit(0, iy1, fw, fh - iy1);
+      blit(0, iy0, ix0, iy1 - iy0);
+      blit(ix1, iy0, fw - ix1, iy1 - iy0);
+    }
     ctx.restore();
   }
 
@@ -1360,6 +1402,8 @@ export class Renderer {
 }
 
 function lookIsWorker(u) { return u.kind === 'worker'; }
+
+const byY = (p, q) => p.y - q.y;
 
 const ATTACK_MARK_TIME = 1.6;
 

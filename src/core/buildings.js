@@ -24,6 +24,7 @@ export const buildingsMixin = {
     }
     this.flowDirty = true;
     this.auraDirty = true;
+    this.boxVersion++;
     if (cfg.wall) this.wallsDirty = true;
     if (!free) this.emit('built', { id: b.id, x: tx + cfg.size / 2, y: ty + cfg.size / 2, building: type });
     return b;
@@ -288,6 +289,7 @@ export const buildingsMixin = {
     for (const r of this.repairers) if (r.task === b.id) r.task = 0;
     this.flowDirty = true;
     this.auraDirty = true;
+    this.boxVersion++;
     if (cfg.wall) this.wallsDirty = true;
     const c = { x: b.tx + b.size / 2, y: b.ty + b.size / 2 };
     let i = 0;

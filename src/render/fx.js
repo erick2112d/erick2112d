@@ -150,35 +150,68 @@ export class Fx {
   }
 
   // Надписи — в экранных координатах, чтобы шрифт был чётким.
-  drawTexts(ctx, toScreen, scale) {
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+  // Каждая надпись растеризуется один раз в картинку (шрифт, обводка, кружок ресурса),
+  // а «выпрыгивание» — это масштаб картинки: так не нужно перестраивать шрифт каждый кадр.
+  drawTexts(ctx, toScreen, scale, dpr = 1) {
     for (const t of this.texts) {
       const k = t.life / t.max;
       const pop = k < 0.15 ? 0.6 + (k / 0.15) * 0.6 : 1.2 - Math.min(0.2, (k - 0.15) * 0.6);
       const [sx, sy] = toScreen(t.x, t.y);
-      const size = Math.round(Math.max(12, scale * 0.38) * t.size * pop);
+      const base = Math.round(Math.max(12, scale * 0.38) * t.size * 1.2);
+      const img = this.textSprite(t.str, t.color, t.dot, base, dpr);
+      const m = pop / 1.2;
+      const w = img.cssW * m;
+      const h = img.cssH * m;
       ctx.globalAlpha = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
-      ctx.font = `800 ${size}px "Trebuchet MS", system-ui, sans-serif`;
-      ctx.lineWidth = Math.max(3, size * 0.22);
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineJoin = 'round';
-      let x = sx;
-      if (t.dot) {
-        const w = ctx.measureText(t.str).width;
-        x = sx + size * 0.35;
-        ctx.beginPath();
-        ctx.arc(sx - w / 2 - size * 0.05, sy, size * 0.32, 0, Math.PI * 2);
-        ctx.fillStyle = t.dot;
-        ctx.fill();
-        ctx.lineWidth = Math.max(2, size * 0.12);
-        ctx.stroke();
-        ctx.lineWidth = Math.max(3, size * 0.22);
-      }
-      ctx.strokeText(t.str, x, sy);
-      ctx.fillStyle = t.color;
-      ctx.fillText(t.str, x, sy);
+      ctx.drawImage(img, sx - img.ax * m, sy - h / 2, w, h);
     }
     ctx.globalAlpha = 1;
+  }
+
+  textSprite(str, color, dot, size, dpr) {
+    const key = `${str}|${color}|${dot || ''}|${size}|${dpr}`;
+    const cache = this.textCache || (this.textCache = new Map());
+    let c = cache.get(key);
+    if (c) return c;
+    const font = `800 ${size}px "Trebuchet MS", system-ui, sans-serif`;
+    const meas = (this.measureCtx || (this.measureCtx = document.createElement('canvas').getContext('2d')));
+    meas.font = font;
+    const tw = meas.measureText(str).width;
+    const lw = Math.max(3, size * 0.22);
+    const dotR = dot ? size * 0.32 : 0;
+    const pad = lw + 2;
+    const left = dot ? dotR * 2 + size * 0.05 + pad : pad;
+    const cssW = Math.ceil(left + tw + pad);
+    const cssH = Math.ceil(size * 1.3 + pad);
+    c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(cssW * dpr));
+    c.height = Math.max(1, Math.ceil(cssH * dpr));
+    const x = c.getContext('2d');
+    x.scale(dpr, dpr);
+    x.font = font;
+    x.textAlign = 'left';
+    x.textBaseline = 'middle';
+    x.lineJoin = 'round';
+    x.strokeStyle = OUTLINE;
+    const cy = cssH / 2;
+    if (dot) {
+      x.beginPath();
+      x.arc(pad + dotR, cy, dotR, 0, Math.PI * 2);
+      x.fillStyle = dot;
+      x.fill();
+      x.lineWidth = Math.max(2, size * 0.12);
+      x.stroke();
+    }
+    x.lineWidth = lw;
+    x.strokeText(str, left, cy);
+    x.fillStyle = color;
+    x.fillText(str, left, cy);
+    c.cssW = cssW;
+    c.cssH = cssH;
+    // точка привязки: середина текста (как раньше — текст по центру, кружок слева от него)
+    c.ax = dot ? left + tw / 2 - size * 0.35 : left + tw / 2;
+    cache.set(key, c);
+    if (cache.size > 240) cache.delete(cache.keys().next().value);
+    return c;
   }
 }

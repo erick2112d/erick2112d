@@ -3,6 +3,8 @@ import { WORLD, NODES, ZONES, NODE_RESPAWN_SECONDS, BUILDINGS, SHRINES, NOTES, h
 import { createRng } from './rng.js';
 import { buildFlowField, nextCell, findPath } from './flowfield.js';
 
+const SEEN = new Int32Array(32);
+
 export const worldMixin = {
   // ---------- свет и мгла ----------
 
@@ -261,6 +263,14 @@ export const worldMixin = {
   // Забор для своих — узкие полосы по рисунку: горизонтальный у нижнего края клетки, вертикальный посередине,
   // на углах обе. Враги по-прежнему упираются во всю клетку (см. pushOutOfRect).
   colliderBoxes(b) {
+    // контуры зависят только от соседних заборов — кешируем до следующей стройки или сноса
+    if (b._boxes && b._bv === this.boxVersion) return b._boxes;
+    b._bv = this.boxVersion;
+    b._boxes = this.computeBoxes(b);
+    return b._boxes;
+  },
+
+  computeBoxes(b) {
     const cfg = BUILDINGS[b.type];
     if (cfg.wall) {
       const isWall = (x, y) => { const o = this.buildingAt(x, y); return !!(o && BUILDINGS[o.type].wall); };
@@ -318,14 +328,18 @@ export const worldMixin = {
     const x1 = Math.floor(u.x + r + 0.5);
     const y0 = Math.floor(u.y - r - 0.5);
     const y1 = Math.floor(u.y + r + 0.5);
-    const seen = new Set();
+    // уже проверенные постройки (большое здание занимает несколько клеток) — без выделения памяти
+    const seen = SEEN;
+    let ns = 0;
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
         if (!this.inBounds(cx, cy)) continue;
         const i = this.idx(cx, cy);
         const bid = this.grid[i];
-        if (bid && !seen.has(bid)) {
-          seen.add(bid);
+        let dup = false;
+        if (bid) for (let k = 0; k < ns; k++) if (seen[k] === bid) { dup = true; break; }
+        if (bid && !dup) {
+          if (ns < seen.length) seen[ns++] = bid;
           const b = this.bMap.get(bid);
           if (b && !b.destroyed && this.isSolidCell(i, who)) this.pushOutOfRect(u, b, who);
         }
@@ -509,46 +523,37 @@ export const worldMixin = {
   },
 
   separateUnits() {
-    const list = [];
+    const list = this._sepList || (this._sepList = []);
+    list.length = 0;
     if (!this.hero.dead) list.push(this.hero);
     for (const a of this.allies) if (!a.dead) list.push(a);
     for (const w of this.workers) if (!w.dead && !w.hidden) list.push(w);
     for (const e of this.enemies) if (!e.dead) list.push(e);
     for (const r of this.repairers) list.push(r);
-    const buckets = new Map();
-    for (const u of list) {
-      const k = Math.floor(u.x) + Math.floor(u.y) * 1000;
-      let cell = buckets.get(k);
-      if (!cell) { cell = []; buckets.set(k, cell); }
-      cell.push(u);
-    }
-    for (const u of list) {
-      const bx = Math.floor(u.x);
-      const by = Math.floor(u.y);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const cell = buckets.get(bx + dx + (by + dy) * 1000);
-          if (!cell) continue;
-          for (const o of cell) {
-            if (o === u || o.id < u.id) continue;
-            if (!!o.flying !== !!u.flying) continue;
-            const ox = o.x - u.x;
-            const oy = o.y - u.y;
-            const min = u.r + o.r;
-            const d2 = ox * ox + oy * oy;
-            if (d2 >= min * min || d2 < 1e-8) continue;
-            const d = Math.sqrt(d2);
-            const push = (min - d) * 0.5;
-            const wu = u.r * u.r;
-            const wo = o.r * o.r;
-            const fu = wo / (wu + wo);
-            const fo = wu / (wu + wo);
-            u.x -= (ox / d) * push * fu * 2;
-            u.y -= (oy / d) * push * fu * 2;
-            o.x += (ox / d) * push * fo * 2;
-            o.y += (oy / d) * push * fo * 2;
-          }
-        }
+    // попарная проверка с быстрым отсевом по расстоянию: юнитов немного, а памяти не выделяем
+    const n = list.length;
+    for (let a = 0; a < n; a++) {
+      const u = list[a];
+      for (let b = a + 1; b < n; b++) {
+        const o = list[b];
+        const ox = o.x - u.x;
+        const min = u.r + o.r;
+        if (ox > min || ox < -min) continue;
+        const oy = o.y - u.y;
+        if (oy > min || oy < -min) continue;
+        if (!!o.flying !== !!u.flying) continue;
+        const d2 = ox * ox + oy * oy;
+        if (d2 >= min * min || d2 < 1e-8) continue;
+        const d = Math.sqrt(d2);
+        const push = (min - d) * 0.5;
+        const wu = u.r * u.r;
+        const wo = o.r * o.r;
+        const fu = wo / (wu + wo);
+        const fo = wu / (wu + wo);
+        u.x -= (ox / d) * push * fu * 2;
+        u.y -= (oy / d) * push * fu * 2;
+        o.x += (ox / d) * push * fo * 2;
+        o.y += (oy / d) * push * fo * 2;
       }
     }
     for (const u of list) this.resolveSolids(u);

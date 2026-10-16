@@ -13,12 +13,17 @@ mkdirSync(dirname(out), { recursive: true });
 const tmp = join(root, 'dist', '.bundle.js');
 execFileSync('npx', ['--yes', 'esbuild@0.23.1', 'src/main.js', '--bundle', '--format=esm', '--minify', '--target=es2020', `--outfile=${tmp}`], { cwd: root, stdio: 'inherit' });
 const js = readFileSync(tmp, 'utf8').replace(/<\/script/gi, '<\\/script');
+// Воркер синтеза звука — отдельной строкой: в одном файле его нельзя загрузить по адресу.
+const wtmp = join(root, 'dist', '.worker.js');
+execFileSync('npx', ['--yes', 'esbuild@0.23.1', 'src/audio-worker.js', '--bundle', '--format=iife', '--minify', '--target=es2020', `--outfile=${wtmp}`], { cwd: root, stdio: 'inherit' });
+const workerSrc = JSON.stringify(readFileSync(wtmp, 'utf8')).replace(/<\/script/gi, '<\\/script');
 const css = readFileSync(join(root, 'style.css'), 'utf8');
 const body = `<div id="app">
   <canvas id="game"></canvas>
   <div id="hud"></div>
   <div id="loader">Разжигаем Сердце Светоча…</div>
 </div>
+<script>window.__LL_SYNTH_SRC = ${workerSrc};</script>
 <script type="module">${js}</script>`;
 const head = `<title>Последний Светоч</title>
 <meta name="description" content="Защити последний источник света от тварей из тумана.">
