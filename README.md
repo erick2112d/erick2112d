@@ -126,5 +126,7 @@ tests/                 тесты симуляции и сквозной бра�
 ## Android-приложение (RuStore)
 
 Папка [`android/`](android) — оболочка с игрой внутри WebView, сборка APK/AAB на GitHub Actions
-([`.github/workflows/android.yml`](.github/workflows/android.yml)). Подпись, загрузка и медиафайлы —
+([`.github/workflows/android.yml`](.github/workflows/android.yml)). Покупки самоцветов — через платежи RuStore
+(Pay SDK, [`RuStorePay.kt`](android/app/src/main/java/ru/mayak/lastlight/RuStorePay.kt)), те же id товаров, что и на
+Яндексе. Пошаговая публикация, подпись, медиафайлы и подключение доната —
 в [`store/rustore/README.md`](store/rustore/README.md).
