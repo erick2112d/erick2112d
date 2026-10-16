@@ -9,7 +9,43 @@ import { towerStats, evoMods, buildingName } from '../core/stats.js';
 import { resName } from '../core/economy.js';
 import { WORKER_FILTERS } from '../core/units.js';
 import { TUTORIAL } from '../data/index.js';
+import { keepDecoded } from './preload.js';
 import { resIcon, buildingIcon, itemIcon, portrait, enemyPortrait, uiIcon, heroFigure } from './icons.js';
+
+// Картинки вставляем с синхронной расшифровкой: они уже готовы заранее, и окно не мигает пустыми слотами.
+const syncImgs = (html) => html.replace(/<img /g, '<img decoding="sync" ');
+
+// Обновление разметки «по месту»: меняем только отличающиеся узлы, а одинаковые (картинки слотов,
+// иконки) остаются теми же элементами — им нечему мигать при перерисовке окна на телефоне.
+function morphNode(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { a.replaceWith(b.cloneNode(true)); return; }
+  if (a.nodeType === 3 || a.nodeType === 8) { if (a.data !== b.data) a.data = b.data; return; }
+  if (a.isEqualNode(b)) return;
+  for (const at of [...a.attributes]) if (!b.hasAttribute(at.name) && at.name !== 'class') a.removeAttribute(at.name);
+  for (const at of b.attributes) {
+    let v = at.value;
+    if (at.name === 'class' && a.classList.contains('tut-target')) v += ' tut-target'; // подсветку обучения не сбрасываем
+    if (a.getAttribute(at.name) !== v) a.setAttribute(at.name, v);
+  }
+  if (!b.hasAttribute('class') && a.hasAttribute('class')) {
+    if (a.classList.contains('tut-target')) a.setAttribute('class', 'tut-target'); else a.removeAttribute('class');
+  }
+  morphChildren(a, b);
+}
+function morphChildren(a, b) {
+  const an = a.childNodes;
+  const bn = b.childNodes;
+  for (let i = 0; i < bn.length; i++) {
+    if (i < an.length) morphNode(an[i], bn[i]);
+    else a.appendChild(bn[i].cloneNode(true));
+  }
+  while (an.length > bn.length) a.removeChild(a.lastChild);
+}
+function setHTML(el, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = syncImgs(html);
+  morphChildren(el, tpl.content);
+}
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SIDE_ARROWS = { N: '↑', E: '→', S: '↓', W: '←' };
@@ -458,7 +494,7 @@ export class Hud {
   setText(id, html) {
     if (this.last[id] === html) return;
     this.last[id] = html;
-    this.$(id).innerHTML = html;
+    setHTML(this.$(id), html);
   }
 
   renderBars() {
@@ -517,7 +553,7 @@ export class Hud {
       return `<button class="slot ${on ? 'on' : ''} ${id ? '' : 'empty'}" data-action="hotbar" data-slot="${i}" title="${it ? esc(it.name) : 'Пустой слот — открой инвентарь'}" style="${it ? `--rar:${RARITY[it.tier].color}` : ''}">
         ${it ? `<img src="${itemIcon(id)}" alt="">` : '<span class="plus-big">+</span>'}<span class="key">${i + 1}</span></button>`;
     }).join('') + `<button class="slot auto ${g.settings.auto ? 'on' : ''}" data-action="auto" title="Автоатака (Q)">${g.settings.auto ? 'АВТО' : 'РУЧН'}</button>`;
-    this.$('#hotbar').innerHTML = html;
+    setHTML(this.$('#hotbar'), html);
   }
 
   // ---------- карточка постройки ----------
@@ -545,9 +581,7 @@ export class Hud {
     if (!force && this.last.card === html) return;
     this.last.card = html;
     const el = this.$('#card');
-    const scroll = el.scrollTop;
-    el.innerHTML = html;
-    el.scrollTop = scroll;
+    setHTML(el, html);
     el.classList.remove('hidden');
   }
 
@@ -747,9 +781,7 @@ export class Hud {
     this.last.window = html;
     const el = this.$('#window');
     el.className = `window win-${w.kind}`;
-    const scrolls = [...el.querySelectorAll('.scroll-area')].map((a) => a.scrollTop);
-    el.innerHTML = html;
-    el.querySelectorAll('.scroll-area').forEach((a, i) => { a.scrollTop = scrolls[i] || 0; });
+    setHTML(el, html);
   }
 
   openInventory() { this.closeCard(); this.openWindow({ kind: 'inventory', tab: 'gear', sel: null, filter: 'all' }); }
@@ -812,8 +844,10 @@ export class Hud {
       ${stat('damage', 'Урон', Math.round(ws.damage))}${stat('haste', 'Удар раз в', ws.cooldown.toFixed(2) + ' с')}
       ${stat('crit', 'Крит', pct(ws.crit))}${stat('speed', 'Скорость', '+' + pct(st.speed))}
       ${stat('regen', 'Лечение', st.regen.toFixed(1) + '/с')}${stat('goldFind', 'Монеты', '+' + pct(st.goldFind || 0))}</div>`;
+    const figUrl = heroFigure(eq.armor, eq.amulet, eq.weapon);
+    keepDecoded(figUrl);
     const doll = `<div class="doll">
-        <div class="doll-stage"><img class="doll-fig" src="${heroFigure(eq.armor, eq.amulet, eq.weapon)}" alt="Хранитель"></div>
+        <div class="doll-stage"><img class="doll-fig" src="${figUrl}" alt="Хранитель"></div>
         ${slot('weapon', 'p-wl')}${slot('armor', 'p-al')}${slot('amulet', 'p-ar')}${slot('ring', 'p-rr')}
       </div>`;
 
@@ -1011,7 +1045,7 @@ export class Hud {
     this.modal = kind;
     const el = this.$('#modal');
     el.className = `modal modal-${kind}`;
-    el.innerHTML = html;
+    el.innerHTML = syncImgs(html);
     this.$('#modalWrap').classList.remove('hidden');
     this.hooks.modalChanged?.(true);
   }

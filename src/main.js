@@ -6,12 +6,18 @@ import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { initPlatform } from './platform.js';
 import { WORLD, BUILDINGS } from './data/index.js';
+import { Splash } from './ui/splash.js';
+import { preloadAssets } from './ui/preload.js';
 
 const STEP = 1 / 60;
 
+let splash = null;
+
 async function boot() {
+  try { splash = new Splash(document.getElementById('loader')); splash.progress(0.04); } catch (e) { console.warn('Экран загрузки', e); }
   const canvas = document.getElementById('game');
   const platform = await initPlatform();
+  splash?.progress(0.14);
   const audio = new Audio();
 
   let saved = null;
@@ -22,6 +28,7 @@ async function boot() {
     game = new Game();
   }
 
+  splash?.progress(0.2);
   const renderer = new Renderer(canvas, game);
   let speed = 1;
   let paused = false;
@@ -108,6 +115,9 @@ async function boot() {
     get flags() { return { paused, adOpen, speed, frozen: paused || adOpen || !!hud.modal || !!hud.window, hidden: document.hidden }; },
   };
 
+  // всё основное рисуем и расшифровываем заранее, пока виден экран загрузки
+  await preloadAssets(game, (p) => splash?.progress(0.24 + p * 0.72));
+
   let last = performance.now();
   let acc = 0;
   let readySent = false;
@@ -151,7 +161,11 @@ async function boot() {
     }
     renderer.frame(dt, hud);
     hud.update(dt);
-    if (!readySent) { readySent = true; platform.ready(); document.getElementById('loader')?.remove(); }
+    if (!readySent) {
+      readySent = true;
+      platform.ready();
+      if (splash) splash.finish(); else document.getElementById('loader')?.remove();
+    }
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

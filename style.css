@@ -840,3 +840,27 @@ button .ico { width: 20px; height: 20px; }
   .tut-text { font-size: 10.5px; margin-top: 1px; line-height: 1.25; }
   .tut-pointer i { width: 26px; height: 30px; left: -13px; }
 }
+
+/* ---------- экран загрузки ---------- */
+.splash { display: block; position: absolute; inset: 0; z-index: 100; background: #07050e; overflow: hidden; transition: opacity 0.45s ease; }
+.splash.out { opacity: 0; pointer-events: none; }
+.splash-art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.splash-ui { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; pointer-events: none; padding: max(4vh, env(safe-area-inset-top)) 16px max(3vh, env(safe-area-inset-bottom)); }
+.splash-title { font-size: clamp(30px, 7.2vmin, 76px); font-weight: 900; letter-spacing: 0.5px; line-height: 1.05; text-align: center; filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.6)) drop-shadow(0 0 22px rgba(255, 200, 90, 0.45)); }
+.splash-title span {
+  background: linear-gradient(#fff6c8 10%, #ffd34d 48%, #d98b22 92%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 2px #2a1606; paint-order: stroke fill;
+}
+.splash-sub { margin-top: 0.6vh; font-size: clamp(12px, 2.2vmin, 20px); font-weight: 800; color: #e9dcff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7); text-align: center; }
+.splash-bottom { margin-top: auto; width: min(520px, 80vw); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.splash-bar { width: 100%; height: 16px; border-radius: 10px; background: rgba(8, 5, 16, 0.85); border: 2px solid #1b1320; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.55), 0 4px 0 rgba(0, 0, 0, 0.5); overflow: hidden; }
+.splash-bar div { width: 0; height: 100%; background: linear-gradient(#fff0b8, #f2c14e 55%, #c98a2a); box-shadow: 0 0 14px rgba(255, 214, 90, 0.8); }
+.splash-tip { font-size: clamp(11px, 1.9vmin, 15px); font-weight: 700; color: #d8cdea; text-align: center; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.8); min-height: 1.3em; }
+@media (max-height: 520px) {
+  .splash-ui { padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .splash-title { font-size: clamp(24px, 9vmin, 40px); }
+  .splash-sub { font-size: 11px; margin-top: 2px; }
+  .splash-bar { height: 12px; }
+  .splash-bottom { gap: 5px; }
+  .splash-tip { font-size: 11px; }
+}
