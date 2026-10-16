@@ -232,20 +232,22 @@ export function halberd(ctx, tier = 2, s = 1) {
 }
 
 export function bow(ctx, tier = 1, pull = 0, s = 1) {
+  // цель — по +x: дуга выгнута вперёд, тетива ближе к стрелку и при натяжении уходит назад
   ctx.save();
   ctx.scale(s, s);
-  glow(ctx, -0.1, 0, 0.4, tier);
+  glow(ctx, 0.1, 0, 0.4, tier);
+  const sx = -0.04 - pull * 0.18; // где тетива
   ctx.beginPath();
-  ctx.moveTo(0.04, -0.36);
-  ctx.lineTo(0.04 - pull * 0.16, 0);
-  ctx.lineTo(0.04, 0.36);
+  ctx.moveTo(-0.04, -0.36);
+  ctx.lineTo(sx, 0);
+  ctx.lineTo(-0.04, 0.36);
   ctx.strokeStyle = tier >= 5 ? '#bff6ff' : '#e8c766';
   ctx.lineWidth = 0.014;
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(0.05, -0.38);
-  ctx.bezierCurveTo(-0.14, -0.3, -0.1, -0.08, -0.13, 0);
-  ctx.bezierCurveTo(-0.1, 0.08, -0.14, 0.3, 0.05, 0.38);
+  ctx.moveTo(-0.05, -0.38);
+  ctx.bezierCurveTo(0.14, -0.3, 0.1, -0.08, 0.13, 0);
+  ctx.bezierCurveTo(0.1, 0.08, 0.14, 0.3, -0.05, 0.38);
   ctx.lineWidth = 0.1;
   ctx.strokeStyle = OUTLINE;
   ctx.stroke();
@@ -253,13 +255,13 @@ export function bow(ctx, tier = 1, pull = 0, s = 1) {
   ctx.strokeStyle = tier >= 4 ? METAL[tier] : tier >= 2 ? '#7a4524' : '#a07848';
   ctx.stroke();
   for (const sy of [-1, 1]) {
-    poly(ctx, [[0.06, sy * 0.4], [0.0, sy * 0.3], [-0.05, sy * 0.33]]);
+    poly(ctx, [[-0.06, sy * 0.4], [0.0, sy * 0.3], [0.05, sy * 0.33]]);
     ink(ctx, tier >= 2 ? '#f2c14e' : '#8a6a4a', 0.022);
   }
-  if (tier >= 2) gem(ctx, -0.13, 0, 0.05, tier);
+  if (tier >= 2) gem(ctx, 0.13, 0, 0.05, tier);
   if (pull > 0.05) {
     ctx.save();
-    ctx.translate(0.04 - pull * 0.16, 0);
+    ctx.translate(sx, 0);
     arrow(ctx, 0.75, tier);
     ctx.restore();
   }

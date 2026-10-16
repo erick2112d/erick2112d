@@ -1028,7 +1028,8 @@ ART.workshop = {
 };
 
 // Забор: mask — соседи (1 — север, 2 — восток, 4 — юг, 8 — запад).
-export function wallArt(ctx, level, mask, gate, destroyed, path = null) {
+// open — насколько распахнуты ворота (0 — закрыты, 1 — настежь).
+export function wallArt(ctx, level, mask, gate, destroyed, path = null, open = 0) {
   const stone = level >= 5;
   const metal = level >= 15;
   const col = metal ? '#7d8696' : stone ? '#8a8a96' : '#a0683a';
@@ -1103,37 +1104,63 @@ export function wallArt(ctx, level, mask, gate, destroyed, path = null) {
     }
   };
   if (gate && vert) {
-    // ворота вдоль оси север–юг: створка между двумя столбами, видна сбоку
+    // ворота вдоль оси север–юг: два столба, створка на петлях у дальнего столба.
+    // Закрытая стоит в линии забора (видна ребром), открываясь, поворачивается к востоку лицом к нам.
     const wood = stone ? '#6a6a7a' : '#8a5a32';
     const post = (y) => {
       ctx.beginPath();
-      ctx.rect(-0.17, y - h - 0.22, 0.34, h + 0.22);
+      ctx.rect(-0.15, y - h - 0.22, 0.3, h + 0.22);
       ink(ctx, wood, 0.035);
       ctx.fillStyle = shade(wood, -0.25);
-      ctx.fillRect(0.07, y - h - 0.2, 0.08, h + 0.18);
+      ctx.fillRect(0.05, y - h - 0.2, 0.07, h + 0.18);
       ctx.beginPath();
-      ctx.rect(-0.2, y - h - 0.32, 0.4, 0.12);
+      ctx.rect(-0.19, y - h - 0.32, 0.38, 0.12);
       ink(ctx, top, 0.03);
     };
     if (mask & 1) vPicket(-0.9, -0.08);
-    post(-0.72);
-    // створка приоткрыта наружу, чтобы её было видно
-    const H = h * 0.85;
-    const A = [0.12, -0.7];
-    const B = [0.5, -0.24];
-    poly(ctx, [A, [A[0], A[1] - H], [B[0], B[1] - H], B]);
-    ink(ctx, '#7a4524', 0.03);
-    ctx.strokeStyle = '#4a2a14';
-    ctx.lineWidth = 0.02;
-    for (const k of [0.25, 0.5, 0.75]) {
-      const x = A[0] + (B[0] - A[0]) * k;
-      const y = A[1] + (B[1] - A[1]) * k;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - H); ctx.stroke();
+    const hy = -0.72; // петли — у дальнего (северного) столба
+    const L = 0.66;
+    const H = h * 0.88;
+    const a = Math.abs(open) * Math.PI * 0.5;
+    const ex = Math.sin(a) * L * (open < 0 ? -1 : 1);
+    const ey = hy + Math.cos(a) * L;
+    post(hy);
+    // проход виден, когда створка отошла
+    if (Math.abs(open) > 0.05) {
+      ctx.fillStyle = 'rgba(40,26,14,0.28)';
+      ctx.fillRect(-0.1, hy, 0.2, -hy);
     }
-    ctx.strokeStyle = '#4a4a55';
-    ctx.lineWidth = 0.05;
-    for (const k of [0.22, 0.72]) {
-      ctx.beginPath(); ctx.moveTo(A[0], A[1] - H * k); ctx.lineTo(B[0], B[1] - H * k); ctx.stroke();
+    const door = '#7a4524';
+    if (a < 0.12) {
+      // закрыта: ребро створки между столбами — доски, две железные полосы
+      ctx.beginPath();
+      ctx.rect(-0.1, hy - H, 0.2, -hy + H - 0.02);
+      ink(ctx, door, 0.03);
+      ctx.fillStyle = shade(door, 0.18);
+      ctx.fillRect(-0.06, hy - H + 0.04, 0.05, -hy + H - 0.1);
+      ctx.strokeStyle = '#4a4a55';
+      ctx.lineWidth = 0.045;
+      ctx.beginPath();
+      for (const k of [0.25, 0.7]) { const y = hy - H + (-hy + H) * k; ctx.moveTo(-0.1, y); ctx.lineTo(0.1, y); }
+      ctx.stroke();
+    } else {
+      // створка повёрнута: параллелограмм от петель к краю, доски вертикальные
+      const A = [0.02, hy];
+      const B = [0.02 + ex, ey];
+      poly(ctx, [A, [A[0], A[1] - H], [B[0], B[1] - H], B]);
+      ink(ctx, a > 1.2 ? shade(door, 0.06) : door, 0.03);
+      ctx.strokeStyle = '#4a2a14';
+      ctx.lineWidth = 0.02;
+      for (const k of [0.25, 0.5, 0.75]) {
+        const x = A[0] + (B[0] - A[0]) * k;
+        const y = A[1] + (B[1] - A[1]) * k;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - H); ctx.stroke();
+      }
+      ctx.strokeStyle = '#4a4a55';
+      ctx.lineWidth = 0.045;
+      for (const k of [0.25, 0.7]) {
+        ctx.beginPath(); ctx.moveTo(A[0], A[1] - H * k); ctx.lineTo(B[0], B[1] - H * k); ctx.stroke();
+      }
     }
     post(0);
     // фонарь на переднем столбе
@@ -1170,28 +1197,60 @@ export function wallArt(ctx, level, mask, gate, destroyed, path = null) {
   if (mask & 8) conn(-0.5, 0.36);
   if (mask & 2) conn(0.14, 0.36);
   if (gate) {
-    // ворота: две створки с аркой
+    // ворота: арка и две створки; открываясь, створки уходят внутрь (от нас), и виден проход
     ctx.beginPath();
     ctx.rect(-0.46, -h - 0.1, 0.92, h + 0.08);
     ink(ctx, stone ? '#6a6a7a' : '#8a5a32');
-    ctx.beginPath();
-    ctx.moveTo(-0.32, -0.02);
-    ctx.lineTo(-0.32, -0.42);
-    ctx.arc(0, -0.42, 0.32, Math.PI, 0);
-    ctx.lineTo(0.32, -0.02);
-    ctx.closePath();
-    ink(ctx, '#5a3218');
+    const arch = () => {
+      ctx.beginPath();
+      ctx.moveTo(-0.32, -0.02);
+      ctx.lineTo(-0.32, -0.42);
+      ctx.arc(0, -0.42, 0.32, Math.PI, 0);
+      ctx.lineTo(0.32, -0.02);
+      ctx.closePath();
+    };
+    arch();
+    open = Math.abs(open);
+    ink(ctx, open > 0.02 ? '#2e1f14' : '#5a3218');
     ctx.save();
+    arch();
     ctx.clip();
-    planksFill(ctx, -0.32, -0.75, 0.64, 0.75, 4, '#6b3d1f', true, 5);
+    if (open > 0.02) {
+      // за створками — земля по ту сторону забора
+      const g = ctx.createLinearGradient(0, -0.75, 0, 0);
+      g.addColorStop(0, 'rgba(70,92,52,0.95)');
+      g.addColorStop(1, 'rgba(46,62,36,0.95)');
+      ctx.fillStyle = g;
+      ctx.fillRect(-0.32, -0.75, 0.64, 0.75);
+    }
+    const a = open * Math.PI * 0.45;
+    const W2 = 0.32;
+    const H2 = 0.76;
+    for (const side of [-1, 1]) {
+      const hx = side * W2;                       // петли у края проёма
+      const ex = hx - side * W2 * Math.cos(a);    // край створки
+      const lift = W2 * Math.sin(a) * 0.55;       // уходит вглубь — на экране выше
+      const pts = [[hx, -0.02], [ex, -0.02 - lift], [ex, -0.02 - lift - H2], [hx, -0.02 - H2]];
+      poly(ctx, pts);
+      ink(ctx, '#6b3d1f', 0.025);
+      ctx.save();
+      poly(ctx, pts);
+      ctx.clip();
+      ctx.strokeStyle = '#4a2a14';
+      ctx.lineWidth = 0.018;
+      for (const k of [0.33, 0.66]) {
+        const x = hx + (ex - hx) * k;
+        const y = -0.02 - lift * k;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - H2); ctx.stroke();
+      }
+      ctx.strokeStyle = '#4a4a55';
+      ctx.lineWidth = 0.04;
+      for (const yy of [0.23, 0.53]) {
+        ctx.beginPath(); ctx.moveTo(hx, -0.02 - yy); ctx.lineTo(ex, -0.02 - lift - yy); ctx.stroke();
+      }
+      ctx.restore();
+    }
     ctx.restore();
-    ctx.strokeStyle = '#4a4a55';
-    ctx.lineWidth = 0.04;
-    ctx.beginPath();
-    ctx.moveTo(-0.32, -0.25); ctx.lineTo(0.32, -0.25);
-    ctx.moveTo(-0.32, -0.55); ctx.lineTo(0.32, -0.55);
-    ctx.moveTo(0, -0.74); ctx.lineTo(0, -0.02);
-    ctx.stroke();
     for (const sx of [-1, 1]) { ctx.beginPath(); ctx.rect(sx * 0.46 - 0.08, -h - 0.3, 0.16, h + 0.28); ink(ctx, top, 0.03); }
     return;
   }

@@ -444,32 +444,62 @@ export const worldMixin = {
     return true;
   },
 
+  // Проходимость полуклетки для союзников. Считается лениво и живёт до изменения карты,
+  // поэтому поиск пути по всей карте (через ворота в обход большой базы) остаётся дешёвым.
+  friendSolidHalf(i) {
+    let v = this.navCache[i];
+    if (!v) {
+      const GW = this.W * 2;
+      v = this.friendBlocked(((i % GW) + 0.5) / 2, (Math.floor(i / GW) + 0.5) / 2, 0.1) ? 2 : 1;
+      this.navCache[i] = v;
+    }
+    return v === 2;
+  },
+
+  syncNavCache() {
+    if (!this.navCache) this.navCache = new Uint8Array(this.W * this.H * 4);
+    const ver = `${this.navVersion}|${this.boxVersion}`;
+    if (this.navCacheVer !== ver) { this.navCache.fill(0); this.navCacheVer = ver; }
+    return ver;
+  },
+
   // Движение с обходом препятствий. false — цель недостижима.
   // Союзники ищут путь по сетке из полуклеток, поэтому протискиваются между соседними постройками.
+  // Путь пересчитывается, только если цель заметно сдвинулась, карта изменилась или юнит застрял;
+  // неудачный поиск запоминается — юнит ждёт на месте, а не бежит в забор и не ищет путь каждый кадр.
   navigate(u, tx, ty, speed, stop, dt) {
     const who = u.kind === 'enemy' ? 'enemy' : 'friend';
+    const friend = who === 'friend';
     const d = Math.hypot(tx - u.x, ty - u.y);
     if (d <= stop || u.flying || this.clearLine(u.x, u.y, tx, ty, u.r, who)) {
       u.path = null;
+      u.pathFail = 0;
       this.moveToward(u, tx, ty, speed, stop, dt);
       return true;
     }
-    const S = who === 'friend' ? 2 : 1;
+    const S = friend ? 2 : 1;
     const GW = this.W * S;
     const sub = (x, y) => Math.floor(x * S) + Math.floor(y * S) * GW;
-    const goal = sub(tx, ty);
-    if (!u.path || u.pathGoal !== goal || this.time - u.pathTime > 1) {
-      const start = sub(u.x, u.y);
-      const solid = S === 1
-        ? (i) => this.isSolidCell(i, who)
-        : (i) => this.friendBlocked(((i % GW) + 0.5) / S, (Math.floor(i / GW) + 0.5) / S, 0.1);
-      u.path = findPath(GW, this.H * S, start, goal, solid, S === 1 ? 4000 : 9000);
-      u.pathGoal = goal;
+    const ver = friend ? this.syncNavCache() : this.navVersion;
+    const near = u.pathTX !== undefined && Math.hypot(tx - u.pathTX, ty - u.pathTY) <= 1.2 && u.pathVer === ver;
+    if (u.pathFail > this.time && near) return this.noPath(u, tx, ty, speed, stop, dt, friend);
+    if (!u.path || !near || (!friend && this.time - u.pathTime > 1)) {
+      const solid = friend ? (i) => this.friendSolidHalf(i) : (i) => this.isSolidCell(i, who);
+      u.path = findPath(GW, this.H * S, sub(u.x, u.y), sub(tx, ty), solid, friend ? GW * this.H * S : 4000);
+      u.pathTX = tx;
+      u.pathTY = ty;
+      u.pathVer = ver;
       u.pathTime = this.time;
+      u.pathCheck = { t: this.time, x: u.x, y: u.y };
+      // пути нет — пробуем снова через 1.5–2.5 с (у каждого юнита свой сдвиг, чтобы не искать всем разом)
+      u.pathFail = u.path ? 0 : this.time + 1.5 + ((u.id || 0) % 10) * 0.1;
     }
-    if (!u.path) {
-      this.moveToward(u, tx, ty, speed, stop, dt);
-      return false;
+    if (!u.path) return this.noPath(u, tx, ty, speed, stop, dt, friend);
+    // застрял (толкучка, сдвинули) — на следующем шаге путь пересчитается
+    if (this.time - u.pathCheck.t > 1) {
+      if (Math.hypot(u.x - u.pathCheck.x, u.y - u.pathCheck.y) < 0.1) u.path = null;
+      u.pathCheck = { t: this.time, x: u.x, y: u.y };
+      if (!u.path) return true;
     }
     const cellX = (i) => ((i % GW) + 0.5) / S;
     const cellY = (i) => (Math.floor(i / GW) + 0.5) / S;
@@ -481,6 +511,12 @@ export const worldMixin = {
     }
     this.moveToward(u, cellX(u.path[0]), cellY(u.path[0]), speed, 0, dt);
     return true;
+  },
+
+  // Цель недостижима: свои ждут на месте, враги по-прежнему прут напролом (и ломают преграду).
+  noPath(u, tx, ty, speed, stop, dt, friend) {
+    if (friend) { u.vx = 0; u.vy = 0; u.moving = false; } else this.moveToward(u, tx, ty, speed, stop, dt);
+    return false;
   },
 
   // Свободная клетка у стены здания, ближайшая к точке (x, y).

@@ -86,6 +86,11 @@ export class Game {
   heartCenter() { return this.center(this.heart()); }
   // постройки не двигаются — центр считаем один раз (только для чтения)
   center(b) { return b._c || (b._c = { x: b.tx + b.size / 2, y: b.ty + b.size / 2 }); }
+
+  // Любое изменение проходимости (стройка, снос, разрушение, починка, рубка) ставит flowDirty —
+  // заодно сбрасываем кеш проходимости для союзников и их провалившиеся поиски пути.
+  get flowDirty() { return this._flowDirty; }
+  set flowDirty(v) { this._flowDirty = v; if (v) this.navVersion = (this.navVersion || 0) + 1; }
   emit(type, data = {}) { this.events.push({ ...data, type }); }
   drainEvents() { const e = this.events; this.events = []; return e; }
   byId(id) { return this.bMap.get(id); }

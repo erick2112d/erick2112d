@@ -307,6 +307,7 @@ export class Renderer {
       this.resize();
     }
     const g = this.game;
+    this.frameDt = Math.min(dt, 0.1);
     this.fx.update(dt);
     if (this.lightWave) { this.lightWave.t += dt; if (this.lightWave.t > 1.6) this.lightWave = null; }
     for (const w of this.wisps) w.a += w.speed * dt;
@@ -653,6 +654,23 @@ export class Renderer {
     };
   }
 
+  // Ворота сами открываются, когда рядом свои (герой, солдаты, рабочие, ремонтники), и закрываются за ними.
+  // Возвращает ступень открытия 0…1 (шагами по 1/8 — столько вариантов картинки кешируется).
+  gateOpen(b, c) {
+    const g = this.game;
+    const near = (u) => u && !u.dead && !u.hidden && Math.abs(u.x - c.x) < 1.6 && Math.abs(u.y - c.y) < 1.6;
+    let who = near(g.hero) ? g.hero : null;
+    if (!who) for (const list of [g.allies, g.workers, g.repairers]) { who = list.find(near); if (who) break; }
+    const want = !!who;
+    const k = b._open || 0;
+    // створку толкают от себя: открывается в сторону, противоположную подошедшему
+    if (want && k === 0) b._side = who.x > c.x ? -1 : 1;
+    const dt = this.frameDt || 1 / 60;
+    b._open = want ? Math.min(1, k + dt * 3.2) : Math.max(0, k - dt * 2.2);
+    const e = b._open < 0.5 ? 2 * b._open * b._open : 1 - Math.pow(-2 * b._open + 2, 2) / 2;
+    return (Math.round(e * 8) / 8) * (b._side || 1);
+  }
+
   drawBuilding(ctx, b) {
     const g = this.game;
     const cfg = BUILDINGS[b.type];
@@ -668,7 +686,10 @@ export class Renderer {
     if (cfg.wall) {
       const mask = this.wallMask(b);
       const path = evoPath(b);
-      const sp = sprite(`wall2|${b.level}|${mask}|${cfg.gate ? 1 : 0}|${b.destroyed ? 1 : 0}`, [-0.6, -1.9, 0.6, 0.15], (cx) => wallArt(cx, b.level, mask, !!cfg.gate, b.destroyed, path));
+      const open = cfg.gate && !b.destroyed ? this.gateOpen(b, c) : 0;
+      const sp = sprite(`wall3|${b.level}|${mask}|${cfg.gate ? 1 : 0}|${b.destroyed ? 1 : 0}|${path}|${open}`,
+        cfg.gate ? [-0.9, -1.9, 0.9, 0.15] : [-0.6, -1.9, 0.6, 0.15],
+        (cx) => wallArt(cx, b.level, mask, !!cfg.gate, b.destroyed, path, open));
       drawSprite(ctx, sp);
     } else if (b.destroyed) {
       rubble(ctx, b.size, this.time);

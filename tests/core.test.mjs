@@ -259,6 +259,36 @@ test('коллайдеры: между зданиями вплотную мож�
   assert.ok(Math.hypot(g.hero.x - (tx + 5.5), g.hero.y - (ty + 2)) < 0.6, 'дошёл по касанию: ' + g.hero.x.toFixed(2) + ',' + g.hero.y.toFixed(2));
 });
 
+test('огороженная база: рабочие ходят через ворота и не ищут путь каждый кадр', () => {
+  const g = new Game();
+  rich(g);
+  bigStorage(g);
+  g.tutorial.done = true;
+  g.heart().level = 40;
+  const c = g.heartCenter();
+  const cx = Math.floor(c.x);
+  const cy = Math.floor(c.y);
+  const R = 12;
+  place(g, 'workerCamp', -3, 3);
+  // кольцо забора, ворота с запада; внутри деревьев нет — за ресурсами только наружу
+  for (let x = cx - R; x <= cx + R; x++) {
+    for (let y = cy - R; y <= cy + R; y++) {
+      if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) === R) {
+        g.removeNodeAt(x, y);
+        assert.ok(g.build(x === cx - R && y === cy ? 'gate' : 'wall', x, y, { quiet: true }));
+      } else if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) < R) g.removeNodeAt(x, y);
+    }
+  }
+  g.hero.x = 1000; g.hero.dead = true; g.hero.respawn = 9999;
+  let searches = 0;
+  const nav = g.navigate.bind(g);
+  g.navigate = (u, ...a) => { const r = nav(u, ...a); if (u.pathTime === g.time) searches++; return r; };
+  const gathered = g.stats.gathered;
+  step(g, 60);
+  assert.ok(g.stats.gathered - gathered >= 20, 'рабочие принесли ресурсы снаружи: ' + (g.stats.gathered - gathered));
+  assert.ok(searches < 150, 'поиск пути не повторяется каждый кадр: ' + searches);
+});
+
 test('коллайдеры: между забором и зданием вплотную можно пройти, сквозь забор — нет', () => {
   const g = new Game();
   rich(g);

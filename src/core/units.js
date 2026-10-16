@@ -106,7 +106,11 @@ export const unitsMixin = {
           continue;
         }
       }
-      this.navigate(a, tx, ty, u.speed, stop, dt);
+      if (!this.navigate(a, tx, ty, u.speed, stop, dt) && a.target) {
+        // до врага не добраться (за забором без ворот) — ищем другого, а пока стоим на посту
+        a.target = null;
+        a.retarget = 1;
+      }
       if (this.phase === 'build') a.hp = Math.min(a.maxHp, a.hp + 4 * dt);
     }
   },
@@ -145,6 +149,7 @@ export const unitsMixin = {
     let bd = Infinity;
     for (const n of this.nodes) {
       if (n.hp <= 0 || claimed.has(n.id)) continue;
+      if (w.skip && w.skip[n.id] > this.time) continue; // недавно не смог дойти
       if (filter.kinds && !filter.kinds.includes(n.kind)) continue;
       if (!this.inTerritory(n.x, n.y, 0.6)) continue;
       // рабочие не лезут за склад: если ресурс некуда класть — пропускаем
@@ -169,8 +174,9 @@ export const unitsMixin = {
       // во время волны прячутся в лагере
       if (this.phase === 'wave') {
         if (w.hidden) continue;
-        this.navigate(w, door.x, door.y, speed * 1.3, 0.3, dt);
-        if (Math.hypot(w.x - door.x, w.y - door.y) < 0.6) { w.hidden = true; w.task = 0; w.state = 'seek'; }
+        const ok = this.navigate(w, door.x, door.y, speed * 1.3, 0.3, dt);
+        // до лагеря не дойти (отрезан забором) — прячется где стоит
+        if (!ok || Math.hypot(w.x - door.x, w.y - door.y) < 0.6) { w.hidden = true; w.task = 0; w.state = 'seek'; }
         continue;
       }
       if (w.hidden) { w.hidden = false; w.x = door.x; w.y = door.y; }
@@ -194,10 +200,19 @@ export const unitsMixin = {
         const reach = n.r + w.r + 0.25;
         if (Math.hypot(n.x - w.x, n.y - w.y) <= reach + 0.05) { w.state = 'gather'; w.vx = 0; w.vy = 0; w.moving = false; }
         else {
-          this.navigate(w, n.x, n.y, speed, reach, dt);
+          const ok = this.navigate(w, n.x, n.y, speed, reach, dt);
           w.walkCheck = (w.walkCheck ?? 0) + dt;
+          const stuck = w.walkCheck > 1.2 && w.walkFrom && Math.hypot(w.x - w.walkFrom.x, w.y - w.walkFrom.y) < 0.1;
+          if (!ok || stuck) {
+            // не дойти (забор без ворот, тупик) — этот узел пропускаем на время и берём другой
+            w.skip = w.skip || {};
+            w.skip[n.id] = this.time + 30;
+            w.task = 0;
+            w.state = w.carry > 0 ? 'return' : 'seek';
+            w.walkCheck = 0;
+            continue;
+          }
           if (w.walkCheck > 1.2) {
-            if (w.walkFrom && Math.hypot(w.x - w.walkFrom.x, w.y - w.walkFrom.y) < 0.1) { w.task = 0; w.state = 'seek'; }
             w.walkFrom = { x: w.x, y: w.y };
             w.walkCheck = 0;
           }
@@ -218,7 +233,10 @@ export const unitsMixin = {
         continue;
       }
       if (w.state === 'return') {
-        this.navigate(w, door.x, door.y, speed, 0.3, dt);
+        const ok = this.navigate(w, door.x, door.y, speed, 0.3, dt);
+        w.lostFor = ok ? 0 : (w.lostFor || 0) + dt;
+        // отрезан от лагеря дольше 4 с (забор закрыли за спиной) — находит лазейку и возвращается
+        if (w.lostFor > 4) { w.x = door.x; w.y = door.y; w.lostFor = 0; this.emit('spawnAlly', { x: door.x, y: door.y }); }
         if (Math.hypot(w.x - door.x, w.y - door.y) < 0.7) {
           const added = this.addRes(w.carryRes, w.carry);
           this.stats.gathered += added;
