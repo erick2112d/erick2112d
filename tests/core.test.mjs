@@ -283,6 +283,37 @@ test('коллайдеры: между забором и зданием впло
   g.hero.input = { x: 0, y: 0 };
 });
 
+test('обучение: шаги по порядку, запасы на стройку, после волны — пройдено и сохранено', () => {
+  const g = new Game();
+  assert.equal(g.tutorialStep().id, 'chop');
+  g.update(1 / 60);
+  g.addRes('wood', 10);
+  g.update(1 / 60);
+  assert.equal(g.tutorialStep().id, 'camp');
+  g.res.wood = 0;
+  g.update(1 / 60);
+  assert.ok(g.res.wood >= 25, 'Сердце досыпало древесину на лагерь');
+  g.res.wood = 3;
+  g.update(1 / 60);
+  assert.ok(g.res.wood >= 25, 'и досыпает снова, если запас потратился до стройки');
+  for (const type of ['workerCamp', 'generator', 'sawmill', 'farm', 'archerTower']) {
+    assert.equal(g.tutorialStep().build, type);
+    const sp = g.tutorial.spot;
+    assert.ok(sp, 'есть подсказанное место для ' + type);
+    assert.ok(g.build(type, sp.tx, sp.ty), 'построено: ' + type);
+    g.update(1 / 60);
+    g.update(1 / 60);
+  }
+  assert.equal(g.tutorialStep().id, 'wave');
+  const gems = g.res.gems;
+  assert.ok(g.startWave());
+  assert.equal(g.tutorialStep(), null);
+  assert.ok(g.res.gems > gems, 'награда за обучение');
+  const again = new Game(JSON.parse(JSON.stringify(g.serialize())));
+  assert.equal(again.tutorialStep(), null, 'после загрузки обучение не повторяется');
+  for (const t of ['workerCamp', 'generator', 'sawmill', 'farm', 'archerTower']) assert.ok(g.buildings.some((b) => b.type === t));
+});
+
 test('кузня: изучение оружия, экипировка, быстрые слоты', () => {
   const g = new Game();
   rich(g);

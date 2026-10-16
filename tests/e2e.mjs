@@ -119,10 +119,13 @@ async function buildVia(type, dx, dy) {
   await sleep(100);
   const [sx, sy] = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [info.spot.tx + info.size / 2, info.spot.ty + info.size / 2]);
   await page.mouse.move(sx, sy);
+  await sleep(50);
+  const ghost = await ev(() => ({ ghost: window.__LL.renderer.ghost, type: window.__LL.hud.buildType, tut: window.__LL.game.tutorialStep()?.id, modal: window.__LL.hud.modal, win: window.__LL.hud.window?.kind || null }));
   await page.mouse.click(sx, sy);
   await sleep(150);
   await ev(() => window.__LL.hud.cancelBuild());
   const after = await st();
+  if (after.buildings.length !== before + 1) log('стройка не удалась: ' + JSON.stringify(ghost));
   check(after.buildings.length === before + 1, `построено через меню: ${type}`);
   return after.buildings[after.buildings.length - 1];
 }
@@ -169,8 +172,14 @@ try {
 
   // 1. Добыча и первые постройки
   await ev(() => window.__LL.setSpeed(2));
-  await chopUntil('wood', 30);
+  check((await ev(() => window.__LL.game.tutorialStep()?.id)) === 'chop', 'обучение началось с рубки');
+  check(await page.isVisible('#objective.tut'), 'видна панель обучения');
+  await page.click('[data-action="startWave"]');
+  check((await st()).phase === 'build', 'до конца обучения волну не начать');
+  await chopUntil('wood', 40);
   check(true, 'герой добыл древесину');
+  await page.waitForFunction(() => window.__LL.game.tutorialStep()?.id === 'camp');
+  check(await page.waitForSelector('[data-action="buildMenu"].tut-target', { timeout: 3000 }).then(() => true, () => false), 'подсвечена кнопка «Строить»');
   await buildVia('workerCamp', -4, 3);
   await ev(() => window.__LL.setSpeed(4));
   await page.waitForFunction(() => window.__LL.game.workers.length >= 1, null, { timeout: 15000 });
@@ -180,6 +189,7 @@ try {
   await buildVia('generator', -4, -2);
   await chopUntil('wood', 40);
   await buildVia('sawmill', 4, -2);
+  await buildVia('farm', 4, 3);
   await chopUntil('wood', 40);
   await ev(() => window.__LL.setSpeed(8));
   await page.waitForFunction(() => window.__LL.game.res.planks >= 10, null, { timeout: 40000 });
@@ -188,10 +198,13 @@ try {
   const side = await ev(() => window.__LL.game.wavePreview().sides[0]);
   const v = { N: [0, -3], E: [3, 0], S: [0, 3], W: [-3, 0] }[side];
   await buildVia('archerTower', v[0], v[1]);
+  await page.waitForFunction(() => window.__LL.game.tutorialStep()?.id === 'wave');
+  check(await page.waitForSelector('[data-action="startWave"].tut-target', { timeout: 3000 }).then(() => true, () => false), 'обучение подсвечивает «В бой»');
   await snap('base');
 
   // 2. Волна 1
   const r1 = await playWave(3);
+  check(await ev(() => window.__LL.game.tutorial.done), 'обучение пройдено');
   check(r1.victory, 'волна 1 отражена');
   await snap('result1');
   await page.click('#modal .primary[data-action="nextWave"]');
@@ -238,6 +251,7 @@ try {
     return { x0, y };
   });
   check(wallSpot, 'место для забора свободно');
+  await ev(() => { window.__LL.game.res.wood += 100; }); // на 5 секций точно хватит
   await walkTo(wallSpot.x0 + 2, wallSpot.y - 2.5, 1.5);
   await closeModals();
   await page.click('[data-action="buildMenu"]');
@@ -261,6 +275,7 @@ try {
     g.damageBuilding(ws[4], grp.maxHp * 0.5);
     return { same: ws.every((w) => w.wallGroup === ws[0].wallGroup), count: grp.count, ratios: ws.map((w) => Math.round((w.hp / w.maxHp) * 100)) };
   }, [wallSpot.x0, wallSpot.y]);
+  if (!(wall && wall.same && wall.count === 5)) log('забор: ' + JSON.stringify(wall));
   check(wall && wall.same && wall.count === 5, 'протянутый забор из 5 секций слился в один');
   check(wall.ratios.every((r) => r === 50), `урон по одной секции поровну у всех: ${wall.ratios.join(', ')}%`);
   await snap('wall');
@@ -326,7 +341,10 @@ try {
   await walkTo(chest.x, chest.y + 3, 2.5, 15000);
   const cp = await ev(([x, y]) => window.__LL.renderer.toScreen(x, y), [chest.x, chest.y]);
   await page.mouse.click(cp[0], cp[1]);
-  await page.waitForFunction(() => window.__LL.game.stats.chests >= 1, null, { timeout: 8000 }).catch(() => {});
+  for (let i = 0; i < 20 && !(await ev(() => window.__LL.game.stats.chests >= 1)); i++) {
+    await sleep(400);
+    if (await ev(() => window.__LL.hud.modal)) { await closeModals(); await page.mouse.click(cp[0], cp[1]); } // записка по пути открыла сюжет
+  }
   check(await ev(() => window.__LL.game.stats.chests >= 1), 'сундук открыт');
 
   // 9. Достижения

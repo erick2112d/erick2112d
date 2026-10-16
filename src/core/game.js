@@ -10,6 +10,7 @@ import { combatMixin } from './combat.js';
 import { unitsMixin } from './units.js';
 import { activitiesMixin } from './activities.js';
 import { progressMixin } from './progress.js';
+import { tutorialMixin } from './tutorial.js';
 
 export const SAVE_VERSION = 2;
 
@@ -46,6 +47,7 @@ export class Game {
     this.stats = { kills: 0, bosses: 0, built: 0, walls: 0, crafted: 0, legendary: 0, evolutions: 0, chests: 0, rifts: 0, notes: 0, gathered: 0, bestWave: 0 };
     this.achievements = [];
     this.found = [];               // материалы, которые уже попадали в руки
+    this.tutorial = { step: 0, done: false, entered: false, base: {}, spot: null };
     this.inventory = { items: [...STARTING_ITEMS], equipped: { weapon: 'swordWood', armor: null, amulet: null, ring: null }, hotbar: ['swordWood', null, null] };
     this.activities = { chests: [], shrines: [], rifts: [], notes: [], notesTaken: [], merchant: null, buff: null, chestTimer: 40, riftTimer: 90 };
     this.zoneTimers = {};
@@ -95,6 +97,7 @@ export class Game {
     // поле пути врагов нужно только когда по базе идут твари: между волнами не пересчитываем на каждое дерево
     if (this.flowDirty && (this.phase === 'wave' || this.enemies.some((e) => !e.dead && !e.guard))) this.rebuildFlow();
     if (this.auraDirty) this.recomputeAuras();
+    if (!this.tutorial.done) this.updateTutorial();
     this.recomputeEnergy();
     this.updateNodes(dt);
     this.updateProduction(dt);
@@ -151,6 +154,7 @@ export class Game {
       stats: { ...this.stats },
       achievements: [...this.achievements],
       found: [...this.found],
+      tutorial: { step: this.tutorial.step, done: this.tutorial.done },
       settings: { ...this.settings },
       shop: { ...this.shop },
     };
@@ -189,6 +193,9 @@ export class Game {
     this.stats = { ...this.stats, ...s.stats };
     this.achievements = [...(s.achievements || [])];
     this.found = [...(s.found || Object.keys(this.res).filter((k) => this.res[k] > 0))];
+    // старые сохранения без обучения: опытный игрок уже прошёл его
+    const tut = s.tutorial || { step: 0, done: s.buildings.length > 1 || (s.progress?.highestCleared || 0) > 0 };
+    this.tutorial = { step: tut.step || 0, done: !!tut.done, entered: false, base: {}, spot: null };
     this.settings = { ...this.settings, ...s.settings };
     this.shop = { ...this.shop, ...s.shop };
     this.nextId = Math.max(this.nextId, s.nextId || 0);
@@ -200,4 +207,4 @@ export class Game {
   }
 }
 
-Object.assign(Game.prototype, worldMixin, economyMixin, buildingsMixin, heroMixin, combatMixin, unitsMixin, activitiesMixin, progressMixin);
+Object.assign(Game.prototype, worldMixin, economyMixin, buildingsMixin, heroMixin, combatMixin, unitsMixin, activitiesMixin, progressMixin, tutorialMixin);

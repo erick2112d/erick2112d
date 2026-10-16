@@ -1,5 +1,5 @@
 // Волны, сюжет, достижения, подсказки.
-import { STORY, ACHIEVEMENTS, NOTES, BUILDINGS, WORLD, MERCHANT, ENEMIES } from '../data/index.js';
+import { STORY, ACHIEVEMENTS, NOTES, BUILDINGS, WORLD, MERCHANT, ENEMIES, TUTORIAL } from '../data/index.js';
 import { generateWave } from './waves.js';
 
 export function storyEntry(id) {
@@ -29,6 +29,7 @@ export const progressMixin = {
 
   startWave() {
     if (this.phase !== 'build') return false;
+    if (this.tutorialStep()?.wave) this.completeTutorial();
     const plan = generateWave(this.progress.nextWave);
     this.snapshot = this.serialize();
     this.phase = 'wave';
@@ -126,6 +127,24 @@ export const progressMixin = {
   // ---------- подсказка-цель ----------
 
   objective() {
+    const tut = this.tutorialStep();
+    if (tut) {
+      const n = this.tutorial.step + 1;
+      const head = `Обучение ${n}/${TUTORIAL.length}: `;
+      if (tut.gather) {
+        const got = Math.floor((this.res.wood || 0) - (this.tutorial.base.wood || 0));
+        let tree = null; let bd = Infinity;
+        for (const nd of this.nodes) {
+          if (nd.kind !== 'tree' || nd.hp <= 0 || !this.inTerritory(nd.x, nd.y, 0.6)) continue;
+          const d = Math.hypot(nd.x - this.hero.x, nd.y - this.hero.y);
+          if (d < bd) { bd = d; tree = nd; }
+        }
+        return { text: `${head}${tut.text} (${Math.max(0, Math.min(tut.gather.wood, got))}/${tut.gather.wood})`, target: tree ? { x: tree.x, y: tree.y } : null, tutorial: tut };
+      }
+      const sp = this.tutorial.spot;
+      const size = tut.build ? BUILDINGS[tut.build].size : 0;
+      return { text: head + tut.text, tutorial: tut, build: tut.build, wave: tut.wave, spotTarget: sp ? { x: sp.tx + size / 2, y: sp.ty + size / 2 } : null };
+    }
     if (this.phase === 'wave') {
       const boss = this.enemies.find((e) => !e.dead && ENEMIES[e.type]?.boss);
       if (boss) return { text: `${ENEMIES[boss.type].name} у стен! Сосредоточь удары на боссе`, target: { x: boss.x, y: boss.y } };

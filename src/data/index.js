@@ -10,3 +10,4 @@ export * from './activities.js';
 export * from './story.js';
 export * from './achievements.js';
 export * from './shop.js';
+export * from './tutorial.js';

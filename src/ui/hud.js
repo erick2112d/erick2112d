@@ -8,6 +8,7 @@ import { storyEntry } from '../core/progress.js';
 import { towerStats, evoMods, buildingName } from '../core/stats.js';
 import { resName } from '../core/economy.js';
 import { WORKER_FILTERS } from '../core/units.js';
+import { TUTORIAL } from '../data/index.js';
 import { resIcon, buildingIcon, itemIcon, portrait, enemyPortrait, uiIcon, heroFigure } from './icons.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -23,6 +24,9 @@ const ico = (name, cls = 'ico') => `<img class="${cls}" src="${uiIcon(name)}" al
 const divider = (text) => `<div class="divider"><span>${text}</span></div>`;
 const winHead = (title, extra = '') => `<div class="win-head"><div class="ribbon"><span>${title}</span></div>${extra}
   <button class="icon-btn close" data-action="closeWindow" title="Закрыть (Esc)">✕</button></div>`;
+
+// Пока идёт обучение, эти кнопки недоступны.
+const TUT_BLOCKED = new Set(['inventory', 'shop', 'achievements', 'journal', 'pickWave', 'upgrade', 'upgradeGems', 'upgradeSegment', 'demolishAsk', 'openCraft', 'openMarket']);
 
 const MELEE = ['sword', 'mace', 'daggers', 'scythe', 'halberd'];
 const RANGED = ['bow', 'crossbow'];
@@ -158,10 +162,10 @@ export class Hud {
         </div>
         <div class="currencies" id="currencies"></div>
         <div class="top-buttons">
-          <button class="icon-btn" data-action="inventory" title="Инвентарь (I)"><img src="${uiIcon('bag')}" alt=""></button>
-          <button class="icon-btn" data-action="achievements" title="Достижения"><img src="${uiIcon('trophy')}" alt=""><i class="dot hidden" id="achDot"></i></button>
-          <button class="icon-btn" data-action="shop" title="Магазин"><img src="${uiIcon('shop')}" alt=""></button>
-          <button class="icon-btn" data-action="journal" title="Журнал"><img src="${uiIcon('scroll')}" alt=""><i class="dot hidden" id="journalDot"></i></button>
+          <button class="icon-btn" data-tut-lock data-action="inventory" title="Инвентарь (I)"><img src="${uiIcon('bag')}" alt=""></button>
+          <button class="icon-btn" data-tut-lock data-action="achievements" title="Достижения"><img src="${uiIcon('trophy')}" alt=""><i class="dot hidden" id="achDot"></i></button>
+          <button class="icon-btn" data-tut-lock data-action="shop" title="Магазин"><img src="${uiIcon('shop')}" alt=""></button>
+          <button class="icon-btn" data-tut-lock data-action="journal" title="Журнал"><img src="${uiIcon('scroll')}" alt=""><i class="dot hidden" id="journalDot"></i></button>
           <button class="icon-btn" data-action="sound" title="Звук" id="soundBtn"><img src="${uiIcon('soundOn')}" alt=""></button>
           <button class="icon-btn" data-action="menu" title="Меню"><img src="${uiIcon('menu')}" alt=""></button>
         </div>
@@ -179,6 +183,7 @@ export class Hud {
       <div class="window-wrap hidden" id="windowWrap"><div class="window" id="window"></div></div>
       <div class="modal-wrap hidden" id="modalWrap"><div class="modal" id="modal"></div></div>
       <div class="joystick hidden" id="joystick"><div class="stick" id="stick"></div></div>
+      <div class="tut-pointer hidden" id="tutPointer"><i></i></div>
     `;
   }
 
@@ -230,6 +235,14 @@ export class Hud {
     const g = this.game;
     this.hooks.click?.();
     const id = Number(data.id);
+    const tut = g.tutorialStep();
+    if (tut) {
+      const wrongBuild = (name === 'pickBuild' || name === 'pickBuildGems') && data.type !== tut.build;
+      if (TUT_BLOCKED.has(name) || wrongBuild || (name === 'startWave' && !tut.wave)) {
+        this.toast(wrongBuild ? `Сейчас по обучению: «${BUILDINGS[tut.build]?.name || '…'}»` : 'Сначала пройди обучение — подсказка внизу экрана', true);
+        return;
+      }
+    }
     switch (name) {
       // строительство
       case 'buildMenu': this.openBuildMenu(); break;
@@ -344,12 +357,18 @@ export class Hud {
       const open = BUILD_ORDER.filter((t) => BUILDINGS[t].category === c.id && g.isUnlocked(t)).length;
       return `<button class="tab ${w.tab === c.id ? 'on' : ''}" data-action="buildTab" data-tab="${c.id}">${ico(c.id)}<span>${c.name}</span><i>${open}</i></button>`;
     }).join('');
+    const tut = g.tutorialStep();
     const list = BUILD_ORDER.filter((t) => BUILDINGS[t].category === w.tab).map((t) => {
       const cfg = BUILDINGS[t];
+      if (tut && t !== tut.build) {
+        return `<div class="btile locked">
+          <div class="btile-art"><img src="${buildingIcon(t)}" alt=""><div class="lock-ov">${ico('lock', 'lock-ico')}<span>После обучения</span></div></div>
+          <div class="btile-name">${esc(cfg.name)}</div><div class="btile-desc">${esc(cfg.desc)}</div></div>`;
+      }
       const unlocked = g.isUnlocked(t);
       const count = g.buildings.filter((b) => b.type === t).length;
       const afford = g.canAfford(cfg.cost);
-      return `<div class="btile ${unlocked ? '' : 'locked'} ${afford ? '' : 'poor'}">
+      return `<div class="btile ${unlocked ? '' : 'locked'} ${afford ? '' : 'poor'} ${tut ? 'tut-pick' : ''}">
         <div class="btile-art"><img src="${buildingIcon(t)}" alt="">
           ${count ? `<span class="count">×${count}</span>` : ''}
           ${cfg.evolutions ? '<span class="evo-tag" title="Есть эволюции на 10, 20 и 30 уровне">✦</span>' : ''}
@@ -376,7 +395,22 @@ export class Hud {
     this.renderBars();
     this.renderCurrencies();
     this.renderWavePanel();
-    this.setText('#objective', this.objective && !this.card && !this.buildType ? `<span class="star">★</span> ${esc(this.objective.text)}` : '');
+    const tut = g.tutorialStep();
+    document.body.classList.toggle('tut-lock', !!tut);
+    this.$('#objective').classList.toggle('tut', !!tut);
+    if (tut && this.objective) {
+      // стрелка на карте — к дереву или к подсказанному месту, когда выбрана нужная постройка
+      if (tut.build) this.objective.target = this.buildType === tut.build ? this.objective.spotTarget : null;
+      const n = g.tutorial.step;
+      const steps = TUTORIAL.length;
+      this.setText('#objective', `<div class="tut-head"><span class="tut-badge">Обучение</span><b>${esc(tut.title)}</b><span class="tut-steps">${n + 1}/${steps}</span></div>
+        <div class="tut-text">${esc(tut.build && this.buildType === tut.build
+    ? 'Нажми на подсвеченное место рядом с Сердцем — или на любое другое свободное место на освещённой земле.'
+    : this.objective.text.replace(/^Обучение \d+\/\d+: /, ''))}</div>`);
+    } else {
+      this.setText('#objective', this.objective && !this.card && !this.buildType ? `<span class="star">★</span> ${esc(this.objective.text)}` : '');
+    }
+    this.updateTutorialPointer(tut);
     if (!this.pressing) {
       this.refreshCard();
       this.winTimer = (this.winTimer || 0) - 0.12;
@@ -391,6 +425,34 @@ export class Hud {
     if (this.last.snd !== snd) { this.last.snd = snd; this.$('#soundBtn img').src = uiIcon(snd); }
     const hb = g.inventory.hotbar.join(',') + g.inventory.equipped.weapon + g.settings.auto;
     if (this.last.hb !== hb) this.renderHotbar();
+  }
+
+  // Подсветка нужной кнопки и прыгающая стрелка над ней.
+  updateTutorialPointer(tut) {
+    let sel = null;
+    if (tut && !this.modal) {
+      if (tut.build) {
+        if (this.buildType === tut.build) sel = null;
+        else if (this.window?.kind === 'build') {
+          const cat = BUILDINGS[tut.build].category;
+          if (this.window.tab !== cat) { this.window.tab = cat; this.renderWindow(); }
+          sel = `[data-action="pickBuild"][data-type="${tut.build}"]`;
+        } else if (!this.window) sel = '[data-action="buildMenu"]';
+      } else if (tut.wave && !this.window) sel = '[data-action="startWave"]';
+    }
+    const el = sel ? this.$(sel) : null;
+    if (this.tutEl && this.tutEl !== el) this.tutEl.classList.remove('tut-target');
+    this.tutEl = el;
+    const ptr = this.$('#tutPointer');
+    if (!el) { ptr.classList.add('hidden'); return; }
+    el.classList.add('tut-target');
+    const zoom = parseFloat(getComputedStyle(this.root).zoom) || 1;
+    const r = el.getBoundingClientRect();
+    const below = r.top < 90 || sel.includes('pickBuild'); // в меню стройки стрелка снизу, чтобы не закрывать цену
+    ptr.classList.toggle('up', below);
+    ptr.style.left = `${(r.left + r.width / 2) / zoom}px`;
+    ptr.style.top = `${(below ? r.bottom + 6 : r.top - 6) / zoom}px`;
+    ptr.classList.remove('hidden');
   }
 
   setText(id, html) {
@@ -461,6 +523,7 @@ export class Hud {
   // ---------- карточка постройки ----------
 
   selectBuilding(id) {
+    if (this.game.tutorialStep()) return; // во время обучения карточки зданий не открываются
     this.card = { kind: 'building', id };
     this.renderer.selected = id;
     this.refreshCard(true);
@@ -651,6 +714,7 @@ export class Hud {
   // ---------- окна ----------
 
   openWindow(w) {
+    if (w.kind !== 'build' && this.game.tutorialStep()) { this.toast('Сначала пройди обучение', true); return; }
     const was = !!this.window;
     this.window = w;
     this.renderWindow();
@@ -1046,6 +1110,11 @@ export class Hud {
       else if (e.type === 'zoneOpen') this.toast(`Открыты новые земли: «${ZONES[e.zone - 1].name}»`, false, { long: true });
       else if (e.type === 'evolutionReady') this.toast('Постройка готова к эволюции — открой её карточку', false);
       else if (e.type === 'crafted') this.toast(`Изучено: ${ITEMS[e.item].name}`);
+      else if (e.type === 'tutorialGift') this.toast('', false, { gold: true, html: `Сердце делится запасами: ${Object.entries(e.gift).map(([k, v]) => `+${fmt(v)} <img class="inl" src="${resIcon(k)}" alt="">`).join(' ')}` });
+      else if (e.type === 'tutorialStep') { this.sfx('build'); this.last['#objective'] = null; }
+      else if (e.type === 'tutorialDone') {
+        this.toast('', false, { gold: true, long: true, html: `Обучение пройдено! ${Object.entries(e.reward).map(([k, v]) => `+${v} <img class="inl" src="${resIcon(k)}" alt="">`).join(' ')}` });
+      }
     }
     if (this.pendingResult && !this.modal && !this.window) {
       const r = this.pendingResult;

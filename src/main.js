@@ -33,7 +33,12 @@ async function boot() {
   const save = () => { platform.save(game.serialize()); saveRequested = false; };
 
   const hud = new Hud(document.getElementById('hud'), game, renderer, {
-    startWave: () => { audio.unlock(); if (game.startWave()) audio.setTension(true); },
+    startWave: () => {
+      audio.unlock();
+      const tut = game.tutorialStep();
+      if (tut && !tut.wave) { hud.toast('Сначала закончи обучение — шаги внизу экрана', true); return; }
+      if (game.startWave()) audio.setTension(true);
+    },
     rewarded: (onReward) => {
       platform.showRewardedAd({
         onOpen: () => { adOpen = true; audio.suspend('ad'); },

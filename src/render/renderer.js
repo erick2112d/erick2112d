@@ -559,7 +559,32 @@ export class Renderer {
       ctx.restore();
     }
     for (const p of g.projectiles) this.drawProjectile(ctx, p);
+    const tut = g.tutorialStep();
+    if (tut?.build && ui.buildType === tut.build) this.drawTutorialSpot(ctx, tut.build);
     if (ui.buildType) this.drawGhost(ctx, ui);
+  }
+
+  // Обучение: светящееся место, куда удобно поставить постройку (ставить можно и в другое место).
+  drawTutorialSpot(ctx, type) {
+    const g = this.game;
+    let sp = g.tutorial.spot;
+    if (sp && !g.canPlace(type, sp.tx, sp.ty).ok) sp = g.tutorial.spot = g.tutorialSpot(g.tutorialStep());
+    if (!sp) return;
+    const cfg = BUILDINGS[type];
+    const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
+    ctx.save();
+    ctx.fillStyle = `rgba(255,214,90,${0.12 + pulse * 0.16})`;
+    ctx.fillRect(sp.tx, sp.ty, cfg.size, cfg.size);
+    ctx.setLineDash([0.22, 0.14]);
+    ctx.lineDashOffset = -this.time * 0.8;
+    ctx.strokeStyle = '#ffd34d';
+    ctx.lineWidth = 0.08;
+    ctx.strokeRect(sp.tx + 0.04, sp.ty + 0.04, cfg.size - 0.08, cfg.size - 0.08);
+    ctx.setLineDash([]);
+    ctx.translate(sp.tx + cfg.size / 2, sp.ty + cfg.size);
+    ctx.globalAlpha = 0.35 + pulse * 0.2;
+    if (ART[type]) drawSprite(ctx, sprite(`${type}|0|null|0`, ART[type].bounds, (c) => ART[type].static(c, { size: cfg.size, level: 1, path: null, tier: 0 })));
+    ctx.restore();
   }
 
   at(ctx, x, y, fn) {
